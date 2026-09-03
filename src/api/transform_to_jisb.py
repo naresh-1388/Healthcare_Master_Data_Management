@@ -1,0 +1,102 @@
+"""Transform the incoming SBC search payload into a JISB request payload.
+
+Source of truth for the connected SBC flow: ``sbc (1).py``.
+The standalone transformation sample is not used to alter this contract.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+
+FIRST_NAME = "hcp.firstName"
+MIDDLE_NAME = "hcp.middleName"
+LAST_NAME = "hcp.lastName"
+ADDRESS_COUNTRY_CODE = "address.countryCode"
+
+JISB_FIELD_MAPPING = (
+    (FIRST_NAME, "individual.firstName", "EXACT", 1),
+    (MIDDLE_NAME, "individual.middleName", "Fuzzy", 1),
+    (LAST_NAME, "individual.lastName", "Fuzzy", 1),
+    ("address.primary", "address.shortlabel", "Fuzzy", 1),
+    (ADDRESS_COUNTRY_CODE, "address.country", "EXACT", 1),
+    ("address.city", "address.villagelabel", "Fuzzy", 1),
+    ("address.longPostalCode", "address.longPostalCode", "EXACT", 1),
+    ("address.type", "address.type", "Fuzzy", 1),
+)
+
+COUNTRY_TO_CODBASE = {
+    "NL": "WNL",
+    "BE": "WBE",
+}
+
+
+class JISBTransformationError(ValueError):
+    """Raised when the incoming payload cannot be transformed for JISB."""
+
+
+def _values(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return [item for item in value if item is not None and str(item).strip()]
+    if value is None or not str(value).strip():
+        return []
+    return [value.strip() if isinstance(value, str) else value]
+
+
+def transform_to_jisb(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Build the JISB request payload used by the SBC flow."""
+
+    incoming = incoming or {}
+    country = str(incoming.get(ADDRESS_COUNTRY_CODE, "") or "").strip().upper()
+
+    if not country:
+        raise JISBTransformationError(
+            "Missing mandatory field: address.countryCode for jisb codBase mapping"
+        )
+
+    cod_base = COUNTRY_TO_CODBASE.get(country)
+    if not cod_base:
+        raise JISBTransformationError(
+            f"Unsupported country for jisb codBase mapping: {country}"
+        )
+
+    output: Dict[str, Any] = {
+        "resultSize": "20",
+        "entityType": "Activity",
+        "codBases": [cod_base],
+        "fields": [],
+    }
+
+    for source, target, method, precision in JISB_FIELD_MAPPING:
+        values = _values(incoming.get(source, ""))
+        if not values:
+            continue
+
+        output["fields"].append(
+            {
+                "method": method,
+                "name": target,
+                "values": values,
+                "fuzzyPrecision": precision,
+            }
+        )
+
+    return output
+
+
+__all__ = [
+    "ADDRESS_COUNTRY_CODE",
+    "COUNTRY_TO_CODBASE",
+    "JISB_FIELD_MAPPING",
+    "JISBTransformationError",
+    "transform_to_jisb",
+]
+
+# ============================================================================
+# USER CONFIGURATION
+# ============================================================================
+# No credentials are required in this transformation module.
+# If the JISB endpoint or authentication is configured elsewhere, update that
+# runtime configuration in the calling API module, not in this mapping file.
+# ============================================================================
+
