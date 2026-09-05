@@ -1,634 +1,1368 @@
 """
-Standardization pipeline.
+Healthcare_MDM - RAW to Landing Standardization
 
-Reads ingestion and standardization metadata, identifies pending batches,
-deduplicates RAW records, applies configured standardization functions,
-and writes the standardized Delta table.
+Source of truth:
+    rat_to_land_std (1).py
+
+Purpose:
+    RAW -> Landing standardization using configuration tables.
+
+Important:
+    - No business standardization rules are invented here.
+    - Actual configured rules come from ctl_std_entity_mstr.
+    - function_mapping must contain the configured rule functions.
 """
 
-import sys
-from datetime import datetime
+from __future__ import annotations
 
-import pyspark.sql.functions as F
-from pyspark.sql import SparkSession
-from pyspark.sql.utils import AnalysisException
+import sys
+import logging
+import uuid
+from datetime import datetime
+from typing import Optional, Tuple
+
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+
+# ---------------------------------------------------------------------
+# PROJECT IMPORTS
+# ---------------------------------------------------------------------
 
 try:
-    from ..core.runtime_config import (
-        DEFAULT_ALERT_EMAILS,
-        batch_log_tbl,
-        catalog,
-        cluster_id,
-        email_config,
-        get_batch_status_filter,
-        get_maillist,
-        get_notebook_run_url,
-        ingestion_config_tbl,
-        job_id,
-        run_id,
-        standardization_config_tbl,
+    from src.core.runtime_config import (
+        CATALOG,
+        UTIL_SCHEMA,
+        RAW_SCHEMA,
+        LANDING_SCHEMA,
     )
-    from ..core.data_io import send_email
-    from ..core.logging_utils import log_event_detail, logger
+except Exception:
+    CATALOG = "healthcare_mdm_dev"
+    UTIL_SCHEMA = f"{CATALOG}.util"
+    RAW_SCHEMA = f"{CATALOG}.raw"
+    LANDING_SCHEMA = f"{CATALOG}.landing"
 
-    # The supplied project does not contain this implementation.
-    # Keep the dependency/interface unchanged.
-    from .standardization_function import function_mapping
 
-except ImportError:
-    from core.runtime_config import (
-        DEFAULT_ALERT_EMAILS,
-        batch_log_tbl,
-        catalog,
-        cluster_id,
-        email_config,
-        get_batch_status_filter,
-        get_maillist,
-        get_notebook_run_url,
-        ingestion_config_tbl,
-        job_id,
-        run_id,
-        standardization_config_tbl,
+try:
+    from src.core.logging_utils import logger
+except Exception:
+    logger = logging.getLogger("Healthcare_MDM.Standardization")
+
+    if not logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s "
+                   "%(name)s - %(message)s"
+        )
+
+
+try:
+    from src.standardization.standardization_function import (
+        function_mapping
     )
-    from core.data_io import send_email
-    from core.logging_utils import log_event_detail, logger
-    from standardization_function import function_mapping
+except Exception:
+    function_mapping = {}
 
 
-spark = SparkSession.builder.getOrCreate()
+# ---------------------------------------------------------------------
+# SPARK
+# ---------------------------------------------------------------------
+
+try:
+    spark
+except NameError:
+    try:
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession.getActiveSession()
+
+        if spark is None:
+            spark = SparkSession.builder.getOrCreate()
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Unable to obtain Spark session: {exc}"
+        )
+
+
+# ---------------------------------------------------------------------
+# CONFIGURATION TABLES
+# ---------------------------------------------------------------------
+
+INGESTION_CONFIG_TBL = (
+    f"{UTIL_SCHEMA}.ctl_entity_mstr"
+)
+
+STANDARDIZATION_CONFIG_TBL = (
+    f"{UTIL_SCHEMA}.ctl_std_entity_mstr"
+)
+
+BATCH_LOG_TBL = (
+    f"{UTIL_SCHEMA}.ctl_batch_log_tbl"
+)
+
+LOG_TBL = (
+    f"{UTIL_SCHEMA}.ctl_log_tbl"
+)
+
+
+# ---------------------------------------------------------------------
+# PIPELINE METADATA
+# ---------------------------------------------------------------------
 
 MODULE_NAME = "Standardization"
 
+PIPELINE_START_TIME = None
+
+RUN_ID = str(uuid.uuid4())
+
+JOB_ID = "Healthcare_MDM_Standardization"
+
+CLUSTER_ID = ""
+
+RUN_URL = ""
+
+
+# ---------------------------------------------------------------------
+# EXCEPTION
+# ---------------------------------------------------------------------
 
 class GracefulExit(Exception):
-    """Expected condition where processing can end without failure."""
-
-
-def read_parameters():
     """
-    Expected arguments:
-        1. source_identifier
-        2. source_system_name
-        3. table_name
+    Used when the pipeline has nothing to process.
     """
-    try:
-        source_identifier = sys.argv[1]
-        source_system_name = sys.argv[2]
-        table_name = sys.argv[3]
-    except IndexError as exc:
-        logger.error(
-            "Arguments missing. Expected: "
-            "script.py <id> <system> <table_name>"
+    pass
+
+
+# ---------------------------------------------------------------------
+# READ PARAMETERS
+# ---------------------------------------------------------------------
+
+def read_parameters(
+    source_identifier: Optional[str] = None,
+    source_system_name: Optional[str] = None,
+    tbl_nm: Optional[str] = None
+) -> Tuple[str, str, str]:
+    """
+    Read standardization parameters.
+
+    Two supported execution modes:
+
+    1. Direct Python / Databricks notebook call:
+
+        read_parameters(
+            "TEST_HCP",
+            "TEST",
+            "test_hcp"
         )
-        raise ValueError(
-            "Missing required command line arguments."
-        ) from exc
 
-    logger.info(
-        f"Parameters: ID={source_identifier}, "
-        f"System={source_system_name}, "
-        f"Table={table_name}"
-    )
+    2. Script execution:
 
-    return (
-        source_identifier,
-        source_system_name,
-        table_name,
-    )
+        python standardization.py TEST_HCP TEST test_hcp
+    """
 
+    # -------------------------------------------------------------
+    # DIRECT FUNCTION ARGUMENTS
+    # -------------------------------------------------------------
 
-def setup_pipeline_environment(source_system_name):
-    """Build runtime values required by the standardization pipeline."""
-
-    run_url = get_notebook_run_url()
-
-    stdz_where_condition = get_batch_status_filter(
-        "stdz",
-        source_system_name,
-    )
-
-    canonical_where_condition = get_batch_status_filter(
-        "canonical",
-        source_system_name,
-    )
-
-    staging_start_time = datetime.now()
-
-    mail_result = (
-        get_maillist(source_system_name)
-        if catalog
-        else (DEFAULT_ALERT_EMAILS, [])
-    )
-
-    # get_maillist() returns the configured tuple in the supplied code.
-    to_list = mail_result
-
-    logger.info(
-        f"{stdz_where_condition}, "
-        f"{canonical_where_condition}"
-    )
-
-    return (
-        run_url,
-        stdz_where_condition,
-        canonical_where_condition,
-        staging_start_time,
-        to_list,
-    )
-
-
-def get_delta_condition(
-    stdz_where_condition,
-    canonical_where_condition,
-    run_url,
-    source_identifier,
-    source_system_name,
-    staging_start_time,
-):
-    """Identify pending batch IDs for standardization."""
-
-    batch_ids = (
-        spark.sql(
-            f"""
-            SELECT collect_list(batch_id) AS batch_id
-            FROM {batch_log_tbl}
-            WHERE {stdz_where_condition}
-               OR {canonical_where_condition}
-            """
-        )
-        .head()[0]
-    )
-
-    logger.info(batch_ids)
-
-    if not batch_ids:
-        log_event_detail(
-            f"DOM - {source_identifier}",
-            "Passed",
-            "No records to be processed",
-            run_url,
+    if (
+        source_identifier is not None
+        and source_system_name is not None
+        and tbl_nm is not None
+    ):
+        logger.info(
+            "Parameters received directly: "
+            "ID=%s, System=%s, Table=%s",
             source_identifier,
             source_system_name,
-            job_id,
-            MODULE_NAME,
-            staging_start_time,
-            cluster_id,
-            run_id,
-        )
-
-        raise GracefulExit(
-            "No delta condition to process.. "
-            "Exiting gracefully"
-        )
-
-    delta_condition = (
-        "batch_id IN ("
-        + ", ".join(str(batch_id) for batch_id in batch_ids)
-        + ")"
-    )
-
-    logger.info(delta_condition)
-
-    return delta_condition
-
-
-def load_ingestion_config(
-    source_identifier,
-    table_name,
-    run_url,
-    source_system_name,
-    staging_start_time,
-    to_list,
-):
-    """Load the active ingestion configuration."""
-
-    try:
-        config_df = spark.table(
-            ingestion_config_tbl
-        )
-
-        ingestion_details = config_df.filter(
-            (F.col("source_identifier") == source_identifier)
-            & (F.col("source_active_flag") == "true")
-        )
-
-        if ingestion_details.count() == 0:
-            send_email(
-                subject=f"No records found for {source_identifier}",
-                body=(
-                    f"Failed to retrieve details from "
-                    f"{ingestion_config_tbl} for "
-                    f"source_identifier {source_identifier} "
-                    "due to inactive source or missing identifier."
-                ),
-                to_email=to_list,
-                smtp_server=email_config["smtp_server"],
-                smtp_user=email_config["smtp_user"],
-            )
-
-            log_event_detail(
-                f"stdz - {table_name}",
-                "Passed",
-                "No record found",
-                run_url,
-                source_identifier,
-                source_system_name,
-                job_id,
-                MODULE_NAME,
-                staging_start_time,
-                cluster_id,
-                run_id,
-            )
-
-            raise GracefulExit(
-                f"No record in {ingestion_config_tbl} "
-                f"table for source_identifier "
-                f"{source_identifier}"
-            )
-
-        return ingestion_details.collect()[0]
-
-    except GracefulExit:
-        raise
-
-    except Exception as exc:
-        logger.error(
-            f"Error Loading Ingestion Configs for "
-            f"{source_identifier}: {exc}"
-        )
-        raise RuntimeError(
-            f"Error Loading Ingestion Configs for "
-            f"{source_identifier}: {exc}"
-        ) from exc
-
-
-def load_standardization_config(source_identifier):
-    """Load active standardization rules."""
-
-    try:
-        config_df = spark.table(
-            standardization_config_tbl
+            tbl_nm
         )
 
         return (
-            config_df.filter(
-                (F.col("source_identifier") == source_identifier)
-                & (F.col("rule_status") == "TRUE")
-            )
-            .collect()
+            str(source_identifier),
+            str(source_system_name),
+            str(tbl_nm)
         )
 
-    except Exception as exc:
-        logger.error(
-            f"Error Loading Standardization Configs "
-            f"for {source_identifier}: {exc}"
-        )
-        raise RuntimeError(
-            f"Error Loading Standardization Configs "
-            f"for {source_identifier}: {exc}"
-        ) from exc
+    # -------------------------------------------------------------
+    # COMMAND LINE ARGUMENTS
+    # -------------------------------------------------------------
 
+    args = sys.argv[1:]
+
+    if len(args) >= 3:
+
+        source_identifier = args[0]
+        source_system_name = args[1]
+        tbl_nm = args[2]
+
+        logger.info(
+            "Parameters received from sys.argv: "
+            "ID=%s, System=%s, Table=%s",
+            source_identifier,
+            source_system_name,
+            tbl_nm
+        )
+
+        return (
+            source_identifier,
+            source_system_name,
+            tbl_nm
+        )
+
+    # -------------------------------------------------------------
+    # FAIL CLEARLY
+    # -------------------------------------------------------------
+
+    raise ValueError(
+        "Missing required arguments. "
+        "Expected: "
+        "source_identifier, source_system_name, table_name"
+    )
+
+
+# ---------------------------------------------------------------------
+# BATCH STATUS CONDITION
+# ---------------------------------------------------------------------
+
+def get_batch_status_filter(
+    module_name: str,
+    source_system_name: str
+) -> str:
+    """
+    Return pending batch condition.
+
+    Standardization processes records where stdz_status is not Y.
+    """
+
+    module_name = module_name.lower()
+
+    if module_name == "stdz":
+        status_column = "stdz_status"
+
+    elif module_name == "canonical":
+        status_column = "canonical_status"
+
+    elif module_name == "dq":
+        status_column = "dq_status"
+
+    elif module_name == "ingress":
+        status_column = "ingress_status"
+
+    elif module_name == "egress":
+        status_column = "egress_status"
+
+    else:
+        raise ValueError(
+            f"Unsupported module for batch status: {module_name}"
+        )
+
+    return (
+        f"source_system_name = "
+        f"'{source_system_name}' "
+        f"AND COALESCE({status_column}, 'N') <> 'Y'"
+    )
+
+
+# ---------------------------------------------------------------------
+# GET DELTA CONDITION
+# ---------------------------------------------------------------------
+
+def get_delta_condition(
+    source_system_name: str
+) -> str:
+    """
+    Get pending batch IDs for the source system.
+    """
+
+    condition = get_batch_status_filter(
+        "stdz",
+        source_system_name
+    )
+
+    query = f"""
+        SELECT collect_list(batch_id) AS batch_ids
+        FROM {BATCH_LOG_TBL}
+        WHERE {condition}
+    """
+
+    logger.info(
+        "Fetching pending batch IDs using condition: %s",
+        condition
+    )
+
+    row = spark.sql(query).first()
+
+    if row is None:
+        raise GracefulExit(
+            f"No pending batch found for "
+            f"source_system_name={source_system_name}"
+        )
+
+    batch_ids = row["batch_ids"]
+
+    if not batch_ids:
+        raise GracefulExit(
+            f"No pending batch found for "
+            f"source_system_name={source_system_name}"
+        )
+
+    batch_ids = [
+        int(batch_id)
+        for batch_id in batch_ids
+        if batch_id is not None
+    ]
+
+    if not batch_ids:
+        raise GracefulExit(
+            f"No valid batch IDs found for "
+            f"source_system_name={source_system_name}"
+        )
+
+    condition = (
+        "batch_id IN ("
+        + ", ".join(str(x) for x in batch_ids)
+        + ")"
+    )
+
+    logger.info(
+        "Delta condition: %s",
+        condition
+    )
+
+    return condition
+
+
+# ---------------------------------------------------------------------
+# LOAD INGESTION CONFIG
+# ---------------------------------------------------------------------
+
+def load_ingestion_configs(
+    source_identifier: str
+):
+    """
+    Load active ingestion configuration.
+    """
+
+    logger.info(
+        "Loading ingestion configuration for %s",
+        source_identifier
+    )
+
+    df = spark.table(INGESTION_CONFIG_TBL)
+
+    config_df = df.filter(
+        (
+            F.col("source_identifier")
+            == source_identifier
+        )
+        &
+        (
+            F.upper(
+                F.col("source_active_flag").cast("string")
+            ) == "TRUE"
+        )
+    )
+
+    records = config_df.collect()
+
+    if not records:
+        raise GracefulExit(
+            f"No active ingestion configuration found "
+            f"for source_identifier={source_identifier}"
+        )
+
+    if len(records) > 1:
+        logger.warning(
+            "Multiple ingestion configuration records found "
+            "for %s. Using first active record.",
+            source_identifier
+        )
+
+    config = records[0]
+
+    logger.info(
+        "Ingestion configuration loaded: "
+        "raw=%s.%s, landing=%s.%s",
+        config["raw_table_schema"],
+        config["raw_table_name"],
+        config["std_table_schema"],
+        config["std_table_name"]
+    )
+
+    return config
+
+
+# ---------------------------------------------------------------------
+# LOAD STANDARDIZATION CONFIG
+# ---------------------------------------------------------------------
+
+def load_standardization_configs(
+    source_identifier: str
+):
+    """
+    Load active standardization rules.
+
+    Business rules are NOT created here.
+    """
+
+    logger.info(
+        "Loading standardization rules for %s",
+        source_identifier
+    )
+
+    df = spark.table(
+        STANDARDIZATION_CONFIG_TBL
+    )
+
+    config_df = df.filter(
+        (
+            F.col("source_identifier")
+            == source_identifier
+        )
+        &
+        (
+            F.upper(
+                F.col("rule_status").cast("string")
+            ) == "TRUE"
+        )
+    )
+
+    rules = config_df.collect()
+
+    logger.info(
+        "Standardization rule count for %s: %s",
+        source_identifier,
+        len(rules)
+    )
+
+    return rules
+
+
+# ---------------------------------------------------------------------
+# PRIMARY KEY PARSER
+# ---------------------------------------------------------------------
+
+def _parse_primary_key(
+    primary_key: Optional[str]
+):
+    """
+    Parse configured primary-key string.
+
+    Supports:
+        individualEid
+
+    and:
+        col1 col2
+
+    and:
+        col1,col2
+    """
+
+    if primary_key is None:
+        return []
+
+    value = str(primary_key).strip()
+
+    if not value:
+        return []
+
+    value = value.replace(",", " ")
+
+    columns = [
+        column.strip()
+        for column in value.split()
+        if column.strip()
+    ]
+
+    return columns
+
+
+# ---------------------------------------------------------------------
+# PREPARE TABLES
+# ---------------------------------------------------------------------
 
 def prepare_tables(
     ingestion_details,
-    delta_condition,
-    source_system_name,
+    delta_condition: str,
+    source_system_name: str
 ):
-    """Read RAW data, apply batch filtering and primary-key deduplication."""
+    """
+    Read RAW records for pending batches and prepare
+    the dataframe for standardization.
+    """
 
-    try:
-        raw_table = (
-            f"{catalog}."
-            f"{ingestion_details['raw_table_schema']}."
-            f"{ingestion_details['raw_table_name']}"
+    raw_schema = ingestion_details[
+        "raw_table_schema"
+    ]
+
+    raw_table_name = ingestion_details[
+        "raw_table_name"
+    ]
+
+    std_schema = ingestion_details[
+        "std_table_schema"
+    ]
+
+    std_table_name = ingestion_details[
+        "std_table_name"
+    ]
+
+    raw_table = (
+        f"{CATALOG}.{raw_schema}.{raw_table_name}"
+    )
+
+    std_table = (
+        f"{CATALOG}.{std_schema}.{std_table_name}"
+    )
+
+    logger.info(
+        "RAW table: %s",
+        raw_table
+    )
+
+    logger.info(
+        "Landing table: %s",
+        std_table
+    )
+
+    # -------------------------------------------------------------
+    # READ RAW
+    # -------------------------------------------------------------
+
+    raw_df = spark.table(raw_table)
+
+    logger.info(
+        "RAW table count: %s",
+        raw_df.count()
+    )
+
+    raw_df.createOrReplaceTempView(
+        "raw_table_vw"
+    )
+
+    # -------------------------------------------------------------
+    # ACTIVE RECORD SQL
+    #
+    # Original source calls this initial_load_sql.
+    # Current ctl_entity_mstr uses active_record_sql.
+    # Prefer active_record_sql because that is the actual
+    # project configuration column.
+    # -------------------------------------------------------------
+
+    active_record_sql = None
+
+    if "active_record_sql" in ingestion_details:
+        active_record_sql = (
+            ingestion_details["active_record_sql"]
         )
 
-        standardization_table = (
-            f"{catalog}."
-            f"{ingestion_details['std_table_schema']}."
-            f"{ingestion_details['std_table_name']}"
+    elif "initial_load_sql" in ingestion_details:
+        active_record_sql = (
+            ingestion_details["initial_load_sql"]
         )
 
-        primary_key = ingestion_details[
-            "source_primary_key"
-        ]
+    if (
+        active_record_sql is not None
+        and str(active_record_sql).strip()
+        and str(active_record_sql).lower() != "none"
+    ):
+        logger.info(
+            "Applying active record SQL."
+        )
 
-        active_record_sql = ingestion_details[
-            "initial_load_sql"
-        ]
+        active_record_df = spark.sql(
+            active_record_sql
+        )
 
-        raw_df = spark.table(raw_table)
-        raw_df.createOrReplaceTempView(
+        active_record_df.createOrReplaceTempView(
             "raw_table_vw"
         )
 
         logger.info(
-            f"raw table {raw_table} count: "
-            f"{raw_df.count()}"
+            "RAW count after active record condition: %s",
+            active_record_df.count()
         )
 
-        record_count = (
-            spark.table(batch_log_tbl)
-            .filter(
-                f"""
-                {delta_condition}
-                AND source_system_name = '{source_system_name}'
-                AND batch_start_time >
-                    '1900-01-01T00:00:00.000+00:00'
-                """
-            )
-            .count()
+    # -------------------------------------------------------------
+    # RAW COLUMNS
+    # -------------------------------------------------------------
+
+    raw_columns = set(raw_df.columns)
+
+    primary_key = _parse_primary_key(
+        ingestion_details["source_primary_key"]
+    )
+
+    # Keep only PK columns which actually exist.
+    existing_primary_key = [
+        column
+        for column in primary_key
+        if column in raw_columns
+    ]
+
+    if primary_key and not existing_primary_key:
+        raise RuntimeError(
+            "Configured source_primary_key columns "
+            f"{primary_key} are not present in RAW table "
+            f"{raw_table}. Available columns: "
+            f"{raw_df.columns}"
         )
 
-        if record_count == 1 and active_record_sql:
-            active_record_df = spark.sql(
-                active_record_sql
-            )
+    # -------------------------------------------------------------
+    # ORDER COLUMN
+    #
+    # Project source uses last_update_date.
+    #
+    # TEST RAW data contains LOAD_DATE instead.
+    # LOAD_DATE is used only as a technical fallback when
+    # last_update_date is absent.
+    # -------------------------------------------------------------
 
-            active_record_df.createOrReplaceTempView(
-                "raw_table_vw"
-            )
+    if "last_update_date" in raw_columns:
+        order_column = "last_update_date"
+
+    elif "LAST_UPDATE_DATE" in raw_columns:
+        order_column = "LAST_UPDATE_DATE"
+
+    elif "LOAD_DATE" in raw_columns:
+        order_column = "LOAD_DATE"
+
+    else:
+        order_column = None
+
+    # -------------------------------------------------------------
+    # SOURCE FILTER
+    # -------------------------------------------------------------
+
+    source_filter = (
+        f"Source_Name = '{source_system_name}'"
+    )
+
+    # -------------------------------------------------------------
+    # DEDUPLICATION
+    # -------------------------------------------------------------
+
+    if existing_primary_key:
+
+        partition_columns = ", ".join(
+            existing_primary_key
+        )
+
+        if order_column:
 
             logger.info(
-                f"raw table {raw_table} count after "
-                f"initial load condition: "
-                f"{active_record_df.count()}"
-            )
-
-        if primary_key:
-            primary_key = primary_key.replace(
-                " ",
-                ",",
+                "Deduplicating RAW records using "
+                "primary key=%s and order column=%s",
+                existing_primary_key,
+                order_column
             )
 
             query = f"""
                 SELECT *
                 FROM (
-                    SELECT *,
-                           row_number() OVER (
-                               PARTITION BY {primary_key}
-                               ORDER BY last_update_date DESC
-                           ) AS rw_num
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {partition_columns}
+                            ORDER BY {order_column} DESC
+                        ) AS rw_num
                     FROM raw_table_vw
                     WHERE {delta_condition}
-                      AND Source_Name = '{source_system_name}'
+                    AND {source_filter}
                 )
                 WHERE rw_num = 1
             """
 
-            df = (
-                spark.sql(query)
-                .drop("rw_num")
+            df = spark.sql(query).drop(
+                "rw_num"
             )
 
-            logger.info(query)
-
         else:
-            query = f"""
+
+            logger.warning(
+                "No last_update_date or LOAD_DATE found. "
+                "Using dropDuplicates on configured "
+                "primary key."
+            )
+
+            df = spark.sql(
+                f"""
                 SELECT *
                 FROM raw_table_vw
                 WHERE {delta_condition}
-                  AND Source_Name = '{source_system_name}'
-            """
+                AND {source_filter}
+                """
+            )
 
-            df = spark.sql(query)
-            logger.info(query)
+            df = df.dropDuplicates(
+                existing_primary_key
+            )
 
-        df = df.toDF(
-            *[
-                column.replace(" ", "_")
-                for column in df.columns
-            ]
-        )
+    else:
 
         logger.info(
-            f"Final data to process for {raw_table}: "
-            f"{df.count()}"
+            "No source primary key configured. "
+            "Reading records without deduplication."
         )
 
-        return (
-            df,
-            df.columns,
-            raw_table,
-            standardization_table,
-            ingestion_details["std_table_name"],
+        df = spark.sql(
+            f"""
+            SELECT *
+            FROM raw_table_vw
+            WHERE {delta_condition}
+            AND {source_filter}
+            """
         )
 
-    except Exception as exc:
-        logger.error(
-            f"Error during preparing tables: {exc}"
-        )
-        raise RuntimeError(
-            f"Error during preparing tables: {exc}"
-        ) from exc
+    # -------------------------------------------------------------
+    # NORMALIZE COLUMN NAMES
+    # -------------------------------------------------------------
 
+    df = df.toDF(
+        *[
+            column.replace(" ", "_")
+            for column in df.columns
+        ]
+    )
+
+    logger.info(
+        "Final records to standardize: %s",
+        df.count()
+    )
+
+    return (
+        df,
+        df.columns,
+        raw_table,
+        std_table,
+        std_table_name
+    )
+
+
+# ---------------------------------------------------------------------
+# EXECUTE STANDARDIZATION
+# ---------------------------------------------------------------------
 
 def execute_standardization(
-    standardization_df,
+    stdn_df: DataFrame,
     original_column_order,
     standardization_details,
-    source_identifier,
-):
+    source_identifier: str
+) -> DataFrame:
     """
     Apply configured standardization functions.
 
-    rename_columns and custom_transformation remain skipped,
-    matching the supplied implementation.
+    No function is invented if it does not exist.
     """
 
+    if not standardization_details:
+
+        logger.info(
+            "No active standardization rules found "
+            "for %s. Passing data through.",
+            source_identifier
+        )
+
+        return stdn_df
+
     for rule in standardization_details:
-        try:
-            rule_function = rule["rule_function"]
 
-            if rule_function in (
-                "rename_columns",
-                "custom_transformation",
-            ):
-                continue
+        rule_function = rule[
+            "rule_function"
+        ]
 
-            standardization_df = function_mapping[
+        column_name = rule[
+            "column_name"
+        ]
+
+        logger.info(
+            "Applying standardization rule: "
+            "function=%s, column=%s",
+            rule_function,
+            column_name
+        )
+
+        # ---------------------------------------------------------
+        # SOURCE-CODE BEHAVIOR
+        # ---------------------------------------------------------
+
+        if rule_function in (
+            "rename_columns",
+            "custom_transformation"
+        ):
+            logger.info(
+                "Skipping framework-level rule: %s",
                 rule_function
-            ](
-                standardization_df,
-                rule["column_name"],
             )
+            continue
 
-            standardization_df = standardization_df.select(
-                *[
-                    column
-                    for column in original_column_order
-                    if column in standardization_df.columns
-                ]
-            )
+        # ---------------------------------------------------------
+        # FUNCTION MUST EXIST
+        # ---------------------------------------------------------
 
-        except Exception as exc:
-            logger.error(
-                "Error during data standardization for "
-                f"{source_identifier}: {exc}"
+        if rule_function not in function_mapping:
+
+            available = sorted(
+                function_mapping.keys()
             )
 
             raise RuntimeError(
-                "Error during data standardization for "
+                "Configured standardization function "
+                f"'{rule_function}' is not available "
+                f"for source_identifier={source_identifier}. "
+                f"Available functions: {available}"
+            )
+
+        # ---------------------------------------------------------
+        # APPLY FUNCTION
+        # ---------------------------------------------------------
+
+        try:
+
+            stdn_df = function_mapping[
+                rule_function
+            ](
+                stdn_df,
+                column_name
+            )
+
+        except Exception as exc:
+
+            raise RuntimeError(
+                "Error applying standardization "
+                f"function '{rule_function}' "
+                f"to column '{column_name}' "
+                f"for source_identifier="
                 f"{source_identifier}: {exc}"
             ) from exc
 
-    return standardization_df
+        # ---------------------------------------------------------
+        # PRESERVE ORIGINAL COLUMN ORDER
+        # ---------------------------------------------------------
 
+        stdn_df = stdn_df.select(
+            *[
+                column
+                for column in original_column_order
+                if column in stdn_df.columns
+            ]
+        )
+
+    return stdn_df
+
+
+# ---------------------------------------------------------------------
+# WRITE LANDING
+# ---------------------------------------------------------------------
 
 def write_standardization_table(
-    standardization_df,
-    standardization_table,
+    stdn_df: DataFrame,
+    std_table: str
 ):
-    """Write standardized data to the Delta table."""
+    """
+    Write standardized dataframe to Landing.
+    """
 
-    try:
-        if standardization_df.count() > 0:
+    record_count = stdn_df.count()
 
-            standardization_df = standardization_df.withColumn(
-                "LOAD_DATE",
-                F.current_timestamp(),
-            )
+    if record_count == 0:
 
-            (
-                standardization_df.write
-                .format("delta")
-                .mode("overwrite")
-                .saveAsTable(standardization_table)
-            )
-
-            logger.info(
-                f"Data loaded into {standardization_table}"
-            )
-
-            logger.info(
-                f"Optimizing Delta table: "
-                f"{standardization_table}"
-            )
-
-            spark.sql(
-                f"OPTIMIZE {standardization_table}"
-            )
-
-        else:
-            raise GracefulExit(
-                f"No new data to load for "
-                f"{standardization_table}"
-            )
-
-    except GracefulExit:
-        raise
-
-    except Exception as exc:
-        logger.error(
-            f"Error writing {standardization_table}: {exc}"
+        raise GracefulExit(
+            f"No new data to load for {std_table}"
         )
-        raise RuntimeError(
-            f"Error writing {standardization_table}: {exc}"
-        ) from exc
-
-
-def main_pipeline():
-    """Main standardization pipeline."""
-
-    logger.info("Reading parameters")
-
-    (
-        source_identifier,
-        source_system_name,
-        table_name,
-    ) = read_parameters()
 
     logger.info(
-        "Starting to read environment for "
-        "running the tables"
+        "Writing %s records into %s",
+        record_count,
+        std_table
+    )
+
+    output_df = stdn_df.withColumn(
+        "LOAD_DATE",
+        F.current_timestamp()
     )
 
     (
-        run_url,
-        stdz_where,
-        canonical_where,
-        start_time,
-        to_list,
-    ) = setup_pipeline_environment(
+        output_df.write
+        .format("delta")
+        .mode("overwrite")
+        .saveAsTable(std_table)
+    )
+
+    logger.info(
+        "Data successfully loaded into %s",
+        std_table
+    )
+
+    # -------------------------------------------------------------
+    # OPTIMIZE
+    # -------------------------------------------------------------
+
+    try:
+
+        spark.sql(
+            f"OPTIMIZE {std_table}"
+        )
+
+        logger.info(
+            "OPTIMIZE completed for %s",
+            std_table
+        )
+
+    except Exception as exc:
+
+        # OPTIMIZE failure should be visible but should not
+        # make the successful data write look like a failure.
+        logger.warning(
+            "OPTIMIZE failed for %s: %s",
+            std_table,
+            exc
+        )
+
+
+# ---------------------------------------------------------------------
+# UPDATE BATCH STATUS
+# ---------------------------------------------------------------------
+
+def update_batch_standardization_status(
+    source_system_name: str,
+    status: str = "Y"
+):
+    """
+    Update stdz_status for pending batches.
+    """
+
+    condition = get_batch_status_filter(
+        "stdz",
         source_system_name
     )
 
-    delta_condition = get_delta_condition(
-        stdz_where,
-        canonical_where,
-        run_url,
-        source_identifier,
-        source_system_name,
-        start_time,
+    query = f"""
+        UPDATE {BATCH_LOG_TBL}
+        SET stdz_status = '{status}'
+        WHERE {condition}
+    """
+
+    logger.info(
+        "Updating standardization batch status: %s",
+        status
     )
 
-    ingestion_details = load_ingestion_config(
-        source_identifier,
-        table_name,
-        run_url,
-        source_system_name,
-        start_time,
-        to_list,
+    spark.sql(query)
+
+    logger.info(
+        "Standardization batch status updated."
     )
 
-    standardization_details = (
-        load_standardization_config(
+
+# ---------------------------------------------------------------------
+# WRITE PIPELINE LOG
+# ---------------------------------------------------------------------
+
+def write_log(
+    source_identifier=None,
+    source_system_name=None,
+    run_status=None,
+    error_description=None,
+    module=None,
+    sub_module=None,
+    run_url=None,
+    start_time=None,
+    end_time=None,
+    run_id=None,
+    job_id=None,
+    user_id=None,
+    cluster_id=None,
+):
+    """
+    Writes standardization pipeline execution details into ctl_log_tbl.
+
+    Argument order is kept compatible with the existing standardization
+    pipeline call while using an explicit Spark schema to avoid
+    CANNOT_DETERMINE_TYPE errors.
+    """
+
+    try:
+        from datetime import datetime
+        from pyspark.sql.types import (
+            StructType,
+            StructField,
+            StringType,
+            TimestampType,
+            DoubleType,
+        )
+
+        print(f"INFO: Writing pipeline log: status={run_status}")
+
+        # ---------------------------------------------------------
+        # Default runtime values
+        # ---------------------------------------------------------
+        if run_id is None:
+            run_id = "0000"
+
+        if job_id is None:
+            job_id = "0000"
+
+        if user_id is None:
+            user_id = ""
+
+        if cluster_id is None:
+            cluster_id = ""
+
+        if run_url is None:
+            run_url = ""
+
+        if error_description is None:
+            error_description = ""
+
+        if start_time is None:
+            start_time = datetime.now()
+
+        if end_time is None:
+            end_time = datetime.now()
+
+        # ---------------------------------------------------------
+        # Calculate execution duration
+        # ---------------------------------------------------------
+        try:
+            time_elapsed = (
+                end_time - start_time
+            ).total_seconds()
+        except Exception:
+            time_elapsed = 0.0
+
+        # ---------------------------------------------------------
+        # Normalize values
+        # ---------------------------------------------------------
+        run_id = str(run_id)
+        job_id = str(job_id)
+
+        if source_identifier is not None:
+            source_identifier = str(source_identifier)
+
+        if source_system_name is not None:
+            source_system_name = str(source_system_name)
+
+        if run_status is not None:
+            run_status = str(run_status)
+
+        if error_description is not None:
+            error_description = str(error_description)
+
+        if module is not None:
+            module = str(module)
+
+        if sub_module is not None:
+            sub_module = str(sub_module)
+
+        run_url = str(run_url)
+        user_id = str(user_id)
+        cluster_id = str(cluster_id)
+
+        # ---------------------------------------------------------
+        # Explicit schema
+        # ---------------------------------------------------------
+        log_schema = StructType([
+            StructField("run_id", StringType(), True),
+            StructField("source_identifier", StringType(), True),
+            StructField("source_system_name", StringType(), True),
+            StructField("job_id", StringType(), True),
+            StructField("module", StringType(), True),
+            StructField("sub_module", StringType(), True),
+            StructField("run_status", StringType(), True),
+            StructField("error_description", StringType(), True),
+            StructField("run_url", StringType(), True),
+            StructField("start_time", TimestampType(), True),
+            StructField("end_time", TimestampType(), True),
+            StructField("time_elapsed", DoubleType(), True),
+            StructField("user_id", StringType(), True),
+            StructField("cluster_id", StringType(), True),
+        ])
+
+        # ---------------------------------------------------------
+        # Build log record
+        # ---------------------------------------------------------
+        log_data = [[
+            run_id,
+            source_identifier,
+            source_system_name,
+            job_id,
+            module,
+            sub_module,
+            run_status,
+            error_description,
+            run_url,
+            start_time,
+            end_time,
+            float(time_elapsed),
+            user_id,
+            cluster_id,
+        ]]
+
+        # ---------------------------------------------------------
+        # Create DataFrame with explicit schema
+        # ---------------------------------------------------------
+        log_df = spark.createDataFrame(
+            log_data,
+            schema=log_schema
+        )
+
+        # ---------------------------------------------------------
+        # Write to project logging table
+        # ---------------------------------------------------------
+        log_df.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable(LOG_TBL)
+
+        print(
+            f"INFO: Pipeline log successfully written to {LOG_TBL}"
+        )
+
+    except Exception as e:
+        print(
+            f"WARNING: Unable to write pipeline log: {e}"
+        )
+# ---------------------------------------------------------------------
+# MAIN PIPELINE
+# ---------------------------------------------------------------------
+
+def main_pipeline(
+    source_identifier: Optional[str] = None,
+    source_system_name: Optional[str] = None,
+    tbl_nm: Optional[str] = None
+):
+    """
+    Main RAW -> Landing standardization pipeline.
+
+    IMPORTANT:
+        Do NOT reset source_identifier/source_system_name here.
+
+        They are passed directly into read_parameters().
+    """
+
+    global PIPELINE_START_TIME
+
+    PIPELINE_START_TIME = datetime.now()
+
+    logger.info(
+        "Starting Healthcare_MDM Standardization"
+    )
+
+    try:
+
+        # ---------------------------------------------------------
+        # PARAMETERS
+        # ---------------------------------------------------------
+
+        (
+            source_identifier,
+            source_system_name,
+            tbl_nm
+        ) = read_parameters(
+            source_identifier,
+            source_system_name,
+            tbl_nm
+        )
+
+        logger.info(
+            "Parameters resolved successfully: "
+            "ID=%s, System=%s, Table=%s",
+            source_identifier,
+            source_system_name,
+            tbl_nm
+        )
+
+        # ---------------------------------------------------------
+        # DELTA CONDITION
+        # ---------------------------------------------------------
+
+        delta_condition = get_delta_condition(
+            source_system_name
+        )
+
+        # ---------------------------------------------------------
+        # INGESTION CONFIG
+        # ---------------------------------------------------------
+
+        ingestion_details = (
+            load_ingestion_configs(
+                source_identifier
+            )
+        )
+
+        # ---------------------------------------------------------
+        # STANDARDIZATION CONFIG
+        # ---------------------------------------------------------
+
+        standardization_details = (
+            load_standardization_configs(
+                source_identifier
+            )
+        )
+
+        # ---------------------------------------------------------
+        # PREPARE RAW DATA
+        # ---------------------------------------------------------
+
+        (
+            stdn_df,
+            original_columns,
+            raw_table,
+            std_table,
+            std_table_name
+        ) = prepare_tables(
+            ingestion_details,
+            delta_condition,
+            source_system_name
+        )
+
+        # ---------------------------------------------------------
+        # APPLY STANDARDIZATION
+        # ---------------------------------------------------------
+
+        stdn_df = execute_standardization(
+            stdn_df,
+            original_columns,
+            standardization_details,
             source_identifier
         )
+
+        # ---------------------------------------------------------
+        # WRITE LANDING
+        # ---------------------------------------------------------
+
+        write_standardization_table(
+            stdn_df,
+            std_table
+        )
+
+        # ---------------------------------------------------------
+        # UPDATE BATCH STATUS
+        # ---------------------------------------------------------
+
+        update_batch_standardization_status(
+            source_system_name,
+            "Y"
+        )
+
+        # ---------------------------------------------------------
+        # LOG SUCCESS
+        # ---------------------------------------------------------
+
+        write_log(
+            source_identifier,
+            source_system_name,
+            "Passed",
+            ""
+        )
+
+        logger.info(
+            "Healthcare_MDM Standardization completed successfully."
+        )
+
+        logger.info(
+            "RAW table: %s",
+            raw_table
+        )
+
+        logger.info(
+            "Landing table: %s",
+            std_table
+        )
+
+        logger.info(
+            "Records processed: %s",
+            stdn_df.count()
+        )
+
+        return stdn_df
+
+    except GracefulExit as exc:
+
+        logger.info(
+            "Standardization exited gracefully: %s",
+            exc
+        )
+
+        if (
+            source_identifier is not None
+            and source_system_name is not None
+        ):
+
+            write_log(
+                source_identifier,
+                source_system_name,
+                "Passed",
+                str(exc)
+            )
+
+        return None
+
+    except Exception as exc:
+
+        logger.exception(
+            "Standardization failed"
+        )
+
+        if (
+            source_identifier is not None
+            and source_system_name is not None
+        ):
+
+            write_log(
+                source_identifier,
+                source_system_name,
+                "Failed",
+                str(exc)
+            )
+
+        raise
+
+
+# ---------------------------------------------------------------------
+# COMPATIBILITY WRAPPER
+# ---------------------------------------------------------------------
+
+def main_standardization_pipeline(
+    source_identifier: Optional[str] = None,
+    source_system_name: Optional[str] = None,
+    tbl_nm: Optional[str] = None
+):
+    """
+    Compatibility function used by Databricks notebook calls.
+    """
+
+    return main_pipeline(
+        source_identifier=source_identifier,
+        source_system_name=source_system_name,
+        tbl_nm=tbl_nm
     )
 
-    (
-        standardization_df,
-        original_columns,
-        _,
-        standardization_table,
-        standardization_table_name,
-    ) = prepare_tables(
-        ingestion_details,
-        delta_condition,
-        source_system_name,
-    )
 
-    standardization_df = execute_standardization(
-        standardization_df,
-        original_columns,
-        standardization_details,
-        source_identifier,
-    )
-
-    write_standardization_table(
-        standardization_df,
-        standardization_table,
-    )
-
-    log_event_detail(
-        f"stdz - {standardization_table_name}",
-        "Passed",
-        "",
-        run_url,
-        source_identifier,
-        source_system_name,
-        job_id,
-        MODULE_NAME,
-        start_time,
-        cluster_id,
-        run_id,
-    )
-
+# ---------------------------------------------------------------------
+# SCRIPT ENTRY POINT
+# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
+
     try:
+
         main_pipeline()
+
     except GracefulExit as exc:
-        logger.info(str(exc))
 
-# ============================================================================
-# USER CONFIGURATION
-# ============================================================================
-# 1) Standardization rules are metadata-driven from the supplied control table.
-# 2) Source/target schema and table names must be supplied through project config.
-# 3) Do not add business rules here unless they exist in the supplied mapping/rules.
-# 4) The function mapping implementation is supplied separately; do not invent
-#    new standardization functions to fill missing project rules.
-# ============================================================================
+        logger.info(
+            "Standardization completed with no work: %s",
+            exc
+        )
 
+    except Exception:
+
+        logger.exception(
+            "Healthcare_MDM Standardization failed."
+        )
+
+        raise

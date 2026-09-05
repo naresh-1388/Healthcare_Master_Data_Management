@@ -1,23 +1,34 @@
-"""Production boundary for the project's standardization functions.
+"""
+Standardization function boundary.
 
-The supplied project references `function_mapping` but does not supply the
-implementation of the referenced standardization functions. Therefore this
-module intentionally does not invent business rules.
+The supplied project references:
+    standardization_function.function_mapping
 
-When the approved implementation is deployed, it can be exposed through the
-supported Databricks module import below. Until then, configured rule names
-fail explicitly in the standardization layer rather than being silently
-skipped or replaced with guessed transformations.
+The actual implementation of the configured standardization functions was
+not supplied with the project files.
+
+Therefore this module intentionally does NOT invent business rules.
+
+If the approved external implementation is available in the Databricks
+environment, it is loaded. Otherwise function_mapping remains empty and
+standardization.py will fail clearly when an actual configured rule requires
+a missing function.
 """
 
 from __future__ import annotations
 
-try:
-    from databricks.src.notebooks.standardization_function import function_mapping
-except (ImportError, ModuleNotFoundError):
-    function_mapping = {}
+function_mapping = {}
 
-if not isinstance(function_mapping, dict):
-    raise TypeError("standardization_function.function_mapping must be a dict")
+# Try the legacy supplied-project location only when it is actually available.
+try:
+    from databricks.src.notebooks.standardization_function import (
+        function_mapping as _external_function_mapping
+    )
+
+    if isinstance(_external_function_mapping, dict):
+        function_mapping = _external_function_mapping
+
+except (ImportError, ModuleNotFoundError):
+    pass
 
 __all__ = ["function_mapping"]

@@ -11,7 +11,7 @@ from datetime import datetime
 
 import pyspark.sql.functions as F
 from pyspark.sql import SparkSession
-from pyspark.sql.types import IntegerType, TimestampType
+from pyspark.sql.types import TimestampType
 
 try:
     from ..core.runtime_config import (
@@ -710,9 +710,7 @@ def process_files_from_metadata(
                 if field.name == "BATCH_ID":
                     df = df.withColumn(
                         field.name,
-                        F.col(field.name).cast(
-                            IntegerType()
-                        ),
+                        F.col(field.name).cast("long"),
                     )
 
                 elif not isinstance(
@@ -790,7 +788,7 @@ def process_files_from_metadata(
                 # Preserved exactly from the source implementation.
                 spark.sql(
                     f"""
-                    UPDATE {catalog}.eda_de_ORIEO_mdm_util.ctl_entity_mstr
+                    UPDATE {ingestion_config_tbl.rsplit(".", 1)[0]}.ctl_entity_mstr
                     SET full_load_flag = false
                     WHERE source_identifier = '{source_identifier}'
                     """

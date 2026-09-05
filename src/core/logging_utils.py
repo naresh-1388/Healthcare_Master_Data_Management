@@ -31,12 +31,8 @@ except ImportError:
         from runtime_config import spark, log_tbl_nm
 
     except ImportError:
-        # Backward-compatible fallback for the existing Databricks
-        # repository execution structure.
-        from databricks.src.notebooks.utility.runtime_config import (
-            spark,
-            log_tbl_nm,
-        )
+        # Script-mode fallback when this file is executed outside the package.
+        from core.runtime_config import spark, log_tbl_nm
 
 
 # ---------------------------------------------------------------------------

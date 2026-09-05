@@ -14,6 +14,7 @@ for all currently supplied HCO ingress mappings.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -843,46 +844,31 @@ def read_parameters(
     }
 
 
-def qualify_table(
-    table_name: str,
-) -> str:
+def _table_aliases() -> Dict[str, str]:
+    """Load optional logical->physical table aliases from runtime config."""
+    raw = os.getenv("HEALTHCARE_MDM_TABLE_ALIASES", "")
+    if not raw:
+        return {}
+    import json
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("HEALTHCARE_MDM_TABLE_ALIASES must be a JSON object")
+    return {str(k): str(v) for k, v in parsed.items()}
 
+
+def qualify_table(table_name: str) -> str:
+    """Resolve a workbook logical table through runtime aliases only.
+
+    The mapping workbook does not provide physical tables for the current
+    environment, so no physical name is fabricated here.
+    """
+    aliases = _table_aliases()
+    if table_name in aliases:
+        return aliases[table_name]
     if table_name.startswith(f"{catalog}."):
         return table_name
-
-    if table_name.startswith("eda_de_"):
-        return f"{catalog}.{table_name}"
-
     return table_name
 
-
-def get_column(
-    df: DataFrame,
-    column_name: str,
-):
-    """Resolve a staging column case-insensitively."""
-
-    lookup = {
-        column.lower(): column
-        for column in df.columns
-    }
-
-    actual = lookup.get(
-        column_name.lower()
-    )
-
-    if actual is None:
-        raise IngressProcessingError(
-            f"Required staging column '{column_name}' "
-            f"not found. Available columns: {df.columns}"
-        )
-
-    return F.col(actual)
-
-
-# ---------------------------------------------------------------------
-# Read each staging source
-# ---------------------------------------------------------------------
 
 def read_source_table(
     table_name: str,
@@ -1187,6 +1173,16 @@ def main() -> None:
     # Do NOT hardcode physical tables here without a source/config.
 
     output_table_map: Dict[str, str] = {}
+
+    # Physical Snowflake/Databricks target table names are not supplied by
+    # the workbook.  Accept them only from runtime configuration.
+    mapping_json = os.getenv("HEALTHCARE_MDM_HCO_INGRESS_TABLE_MAP", "")
+    if mapping_json:
+        import json
+        parsed = json.loads(mapping_json)
+        if not isinstance(parsed, dict):
+            raise ValueError("HEALTHCARE_MDM_HCO_INGRESS_TABLE_MAP must be a JSON object")
+        output_table_map.update({str(k): str(v) for k, v in parsed.items()})
 
     try:
 

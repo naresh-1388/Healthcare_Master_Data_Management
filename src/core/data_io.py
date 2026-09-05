@@ -171,10 +171,10 @@ def archive_file(
 def read_file(
     path: str,
     file_format: str,
-    options: Optional[Dict[str, str]] = None,
+    options: Optional[Dict[str, str]] = None
 ):
     """
-    Read data from a file using the supplied format.
+    Reads data from a file path given format and options.
     """
 
     options = options or {}
@@ -182,15 +182,17 @@ def read_file(
     if file_format in ["csv", "txt"]:
         return spark.read.options(**options).csv(path)
 
-    if file_format == "parquet":
+    elif file_format == "json":
+        return spark.read.options(**options).json(path)
+
+    elif file_format == "parquet":
         return spark.read.parquet(path)
 
-    if file_format == "delta":
+    elif file_format == "delta":
         return spark.read.format("delta").load(path)
 
-    raise ValueError(
-        f"Unsupported file format: {file_format}"
-    )
+    else:
+        raise ValueError(f"Unsupported file format: {file_format}")
 
 
 def read_table(

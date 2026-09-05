@@ -15,7 +15,6 @@ import time
 from datetime import datetime
 
 from pyspark.sql import SparkSession, functions as F
-from pyspark.sql.utils import AnalysisException
 
 try:
     from ..core.runtime_config import (
@@ -30,7 +29,12 @@ try:
         run_id,
         update_batch_log_tbl,
     )
-    from ..core.logging_utils import log_event_detail, logger
+
+    from ..core.logging_utils import (
+        log_event_detail,
+        logger,
+    )
+
 except ImportError:
     from core.runtime_config import (
         batch_log_tbl,
@@ -44,7 +48,11 @@ except ImportError:
         run_id,
         update_batch_log_tbl,
     )
-    from core.logging_utils import log_event_detail, logger
+
+    from core.logging_utils import (
+        log_event_detail,
+        logger,
+    )
 
 
 spark = SparkSession.builder.getOrCreate()
@@ -56,6 +64,10 @@ class GracefulExit(Exception):
     """Expected condition where canonical processing can stop safely."""
 
 
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+
 def read_parameters():
     """
     Expected execution arguments:
@@ -63,15 +75,13 @@ def read_parameters():
         sys.argv[2] -> source_identifier
         sys.argv[3] -> source_system_name
         sys.argv[4] -> target_table_name
-
-    sys.argv[1] is intentionally not used because the supplied
-    canonical implementation starts reading from position 2.
     """
 
     try:
         source_identifier = sys.argv[2]
         source_system_name = sys.argv[3]
         target_table_name = sys.argv[4]
+
     except IndexError as exc:
         raise ValueError(
             "Missing required arguments. Expected: "
@@ -86,13 +96,17 @@ def read_parameters():
     )
 
 
+# ============================================================================
+# BATCH CONDITION
+# ============================================================================
+
 def get_batch_condition(
     source_system_name,
     source_identifier,
     run_url,
     staging_start_time,
 ):
-    """Return the pending canonical batch condition."""
+    """Return pending canonical batch condition."""
 
     where_condition = get_batch_status_filter(
         "canonical",
@@ -117,6 +131,7 @@ def get_batch_condition(
     )
 
     if not batch_ids:
+
         log_event_detail(
             f"DOM - {source_identifier}",
             "Passed",
@@ -132,16 +147,22 @@ def get_batch_condition(
         )
 
         raise GracefulExit(
-            "No delta condition to process.. "
-            "Exiting gracefully"
+            "No delta condition to process. Exiting gracefully"
         )
 
     return (
         "batch_id IN ("
-        + ", ".join(str(batch_id) for batch_id in batch_ids)
+        + ", ".join(
+            str(batch_id)
+            for batch_id in batch_ids
+        )
         + ")"
     )
 
+
+# ============================================================================
+# CANONICAL CONFIGURATION
+# ============================================================================
 
 def get_canonical_config_details(
     src_table_name,
@@ -153,12 +174,28 @@ def get_canonical_config_details(
     run_url,
     staging_start_time,
 ):
-    """Retrieve source and target schema details from canonical config."""
+    """Retrieve source and target schema details."""
 
     try:
+
         config_filter = (
-            (F.lower(F.col("tgt_tbl_nm")) == target_table_name.lower())
-            & (F.lower(F.col("src_tbl_nm")) == src_table_name.lower())
+            (
+                F.lower(
+                    F.trim(
+                        F.col("tgt_tbl_nm")
+                    )
+                )
+                == target_table_name.strip().lower()
+            )
+            &
+            (
+                F.lower(
+                    F.trim(
+                        F.col("src_tbl_nm")
+                    )
+                )
+                == src_table_name.strip().lower()
+            )
         )
 
         config_row = (
@@ -180,10 +217,16 @@ def get_canonical_config_details(
                 f"target={target_table_name}"
             )
 
-        src_schema = f"{catalog}.{config_row['src_schema']}"
+        src_schema = (
+            f"{catalog}.{config_row['src_schema']}"
+        )
+
         src_tbl_nm = config_row["src_tbl_nm"]
 
-        tgt_schema = f"{catalog}.{config_row['tgt_schema']}"
+        tgt_schema = (
+            f"{catalog}.{config_row['tgt_schema']}"
+        )
+
         tgt_tbl_nm = config_row["tgt_tbl_nm"]
 
         logger.info(
@@ -202,10 +245,14 @@ def get_canonical_config_details(
         )
 
     except Exception as exc:
-        error_message = str(exc).split("stacktrace")[0]
+
+        error_message = (
+            str(exc).split("stacktrace")[0]
+        )
 
         log_event_detail(
-            f"Fetching Value from Config File - {target_table_name}",
+            f"Fetching Value from Config File - "
+            f"{target_table_name}",
             "Failed",
             error_message,
             run_url,
@@ -231,6 +278,10 @@ def get_canonical_config_details(
         ) from exc
 
 
+# ============================================================================
+# SOURCE DATA
+# ============================================================================
+
 def get_delta_data_from_src(
     src_schema,
     src_tbl_nm,
@@ -240,20 +291,44 @@ def get_delta_data_from_src(
     run_url,
     staging_start_time,
 ):
-    """Read pending source data and deduplicate using configured PK."""
+    """
+    Read pending source data and deduplicate using configured PK.
+
+    Deduplication ordering:
+        1. last_update_date, when available
+        2. batch_id, when last_update_date is unavailable
+    """
 
     try:
+
+        source_table = (
+            f"{src_schema}.{src_tbl_nm}"
+        )
+
+        logger.info(
+            f"Reading canonical source table: "
+            f"{source_table}"
+        )
+
+        # ------------------------------------------------------------
+        # Get ingestion configuration
+        # ------------------------------------------------------------
+
         config_row = (
             spark.sql(
                 f"""
                 SELECT source_primary_key
                 FROM {ingestion_config_tbl}
                 WHERE (
-                    std_table_name = '{src_tbl_nm}'
-                    OR raw_table_name = '{src_tbl_nm}'
+                    LOWER(TRIM(std_table_name))
+                        = LOWER(TRIM('{src_tbl_nm}'))
+                    OR
+                    LOWER(TRIM(raw_table_name))
+                        = LOWER(TRIM('{src_tbl_nm}'))
                 )
-                AND source_system_name = '{source_identifier}'
-                AND is_active = true
+                AND LOWER(TRIM(source_system_name))
+                    = LOWER(TRIM('{source_system_name}'))
+                AND source_active_flag = true
                 """
             )
             .first()
@@ -265,40 +340,151 @@ def get_delta_data_from_src(
             else None
         )
 
-        source_table = f"{src_schema}.{src_tbl_nm}"
+        logger.info(
+            f"Canonical source primary key: "
+            f"{primary_key}"
+        )
+
+        # ------------------------------------------------------------
+        # Read source schema
+        # ------------------------------------------------------------
+
+        source_df = spark.table(
+            source_table
+        )
+
+        source_columns = {
+            column.lower()
+            for column in source_df.columns
+        }
+
+        # ------------------------------------------------------------
+        # Read pending batch data
+        # ------------------------------------------------------------
+
+        pending_df = source_df.filter(
+            F.expr(batch_condition)
+        )
+
+        pending_count = pending_df.count()
+
+        logger.info(
+            f"Canonical pending source count: "
+            f"{pending_count}"
+        )
+
+        if pending_count == 0:
+            raise GracefulExit(
+                f"No delta data for {src_tbl_nm}"
+            )
+
+        # ------------------------------------------------------------
+        # Deduplication
+        # ------------------------------------------------------------
 
         if primary_key:
-            primary_key = primary_key.replace(",", " ")
 
-            query = f"""
-                SELECT *
-                FROM (
-                    SELECT *,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY {primary_key}
-                               ORDER BY last_update_date DESC
-                           ) AS rw_num
-                    FROM {source_table}
-                    WHERE {batch_condition}
+            primary_key = (
+                primary_key
+                .replace(",", " ")
+                .strip()
+            )
+
+            # Determine ordering column dynamically.
+            if "last_update_date" in source_columns:
+
+                order_column = "last_update_date"
+
+                logger.info(
+                    "Canonical dedup ordering column: "
+                    "last_update_date"
                 )
-                WHERE rw_num = 1
-            """
 
-            source_df = spark.sql(query).drop("rw_num")
+            elif "batch_id" in source_columns:
+
+                order_column = "batch_id"
+
+                logger.info(
+                    "Canonical dedup ordering column: "
+                    "batch_id"
+                )
+
+            else:
+
+                order_column = None
+
+                logger.warning(
+                    "Neither last_update_date nor batch_id "
+                    "is available. Reading configured PK rows "
+                    "without ordering-based deduplication."
+                )
+
+            if order_column:
+
+                query = f"""
+                    SELECT *
+                    FROM (
+                        SELECT *,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY {primary_key}
+                                   ORDER BY {order_column} DESC
+                               ) AS rw_num
+                        FROM {source_table}
+                        WHERE {batch_condition}
+                    )
+                    WHERE rw_num = 1
+                """
+
+                source_df = (
+                    spark.sql(query)
+                    .drop("rw_num")
+                )
+
+            else:
+
+                source_df = (
+                    pending_df
+                    .dropDuplicates(
+                        primary_key.split()
+                    )
+                )
 
         else:
-            source_df = spark.sql(
-                f"""
-                SELECT *
-                FROM {source_table}
-                WHERE {batch_condition}
-                """
+
+            logger.warning(
+                "No primary key found in ingestion config. "
+                "Reading source rows without PK deduplication."
+            )
+
+            source_df = pending_df
+
+        # ------------------------------------------------------------
+        # Final count
+        # ------------------------------------------------------------
+
+        record_count = source_df.count()
+
+        logger.info(
+            f"Canonical source data count after "
+            f"deduplication: {record_count}"
+        )
+
+        if record_count == 0:
+            raise GracefulExit(
+                f"No canonical records after deduplication "
+                f"for {src_tbl_nm}"
             )
 
         return source_df
 
+    except GracefulExit:
+        raise
+
     except Exception as exc:
-        error_message = str(exc).split("stacktrace")[0]
+
+        error_message = (
+            str(exc).split("stacktrace")[0]
+        )
 
         log_event_detail(
             f"Retrieving delta data - {src_tbl_nm}",
@@ -322,9 +508,13 @@ def get_delta_data_from_src(
         )
 
         raise RuntimeError(
-            f"Unable to retrieve delta data from {src_tbl_nm}"
+            f"Unable to retrieve delta data from "
+            f"{src_tbl_nm}: {error_message}"
         ) from exc
 
+# ============================================================================
+# COLUMN MAPPING
+# ============================================================================
 
 def retrieve_column_mapping(
     src_tbl_nm,
@@ -338,6 +528,7 @@ def retrieve_column_mapping(
     """Retrieve configured source-to-target canonical mappings."""
 
     try:
+
         mapping_df = spark.sql(
             f"""
             SELECT
@@ -345,38 +536,80 @@ def retrieve_column_mapping(
                 tgt_attribute,
                 join_condition
             FROM {canonical_config_tbl}
-            WHERE source_system_name = '{source_identifier}'
-              AND tgt_tbl_nm = '{tgt_tbl_nm}'
-              AND src_tbl_nm = '{src_tbl_nm}'
-              AND module = '{MODULE_NAME}'
+            WHERE LOWER(TRIM(source_system_name))
+                    = LOWER(TRIM('{source_system_name}'))
+              AND LOWER(TRIM(source_identifier))
+                    = LOWER(TRIM('{source_identifier}'))
+              AND LOWER(TRIM(tgt_tbl_nm))
+                    = LOWER(TRIM('{tgt_tbl_nm}'))
+              AND LOWER(TRIM(src_tbl_nm))
+                    = LOWER(TRIM('{src_tbl_nm}'))
+              AND LOWER(TRIM(module))
+                    = LOWER(TRIM('{MODULE_NAME}'))
             """
         )
+
+        mapping_count = mapping_df.count()
+
+        logger.info(
+            f"Canonical mapping rows found: "
+            f"{mapping_count}"
+        )
+
+        if mapping_count == 0:
+            raise ValueError(
+                f"No canonical column mappings found for "
+                f"source={src_tbl_nm}, "
+                f"target={tgt_tbl_nm}, "
+                f"source_identifier={source_identifier}, "
+                f"source_system_name={source_system_name}"
+            )
 
         join_condition_row = (
             mapping_df
             .agg(
                 F.concat_ws(
                     " ",
-                    F.collect_set("join_condition"),
+                    F.collect_set(
+                        F.when(
+                            F.col("join_condition").isNotNull(),
+                            F.col("join_condition"),
+                        )
+                    ),
                 ).alias("join_condition")
             )
             .first()
         )
 
-        join_condition = (
-            join_condition_row["join_condition"]
-            if join_condition_row
+        join_condition = ""
+
+        if (
+            join_condition_row
             and join_condition_row["join_condition"]
-            else ""
+        ):
+            join_condition = (
+                join_condition_row["join_condition"]
+            )
+
+        logger.info(
+            f"Canonical join condition: "
+            f"{join_condition if join_condition else 'NONE'}"
         )
 
-        return mapping_df, join_condition
+        return (
+            mapping_df,
+            join_condition,
+        )
 
     except Exception as exc:
-        error_message = str(exc).split("stacktrace")[0]
+
+        error_message = (
+            str(exc).split("stacktrace")[0]
+        )
 
         log_event_detail(
-            f"Creating canonical mapping table - {tgt_tbl_nm}",
+            f"Creating canonical mapping table - "
+            f"{tgt_tbl_nm}",
             "Failed",
             error_message,
             run_url,
@@ -398,34 +631,48 @@ def retrieve_column_mapping(
 
         raise RuntimeError(
             f"Unable to retrieve canonical mappings "
-            f"for {tgt_tbl_nm}"
+            f"for {tgt_tbl_nm}: {error_message}"
         ) from exc
 
 
-def build_mapping_string(mapping_df):
-    """
-    Build the SELECT projection from configuration.
+# ============================================================================
+# MAPPING STRING
+# ============================================================================
 
-    Date/time/cast expressions are preserved as expressions.
-    Other source attributes are cast to STRING, matching the
-    supplied canonical implementation.
-    """
+def build_mapping_string(mapping_df):
+    """Build SELECT projection from configuration."""
 
     try:
+
         mapping_expressions = []
 
-        for row in mapping_df.collect():
+        rows = mapping_df.collect()
+
+        if not rows:
+            raise ValueError(
+                "Canonical mapping configuration is empty."
+            )
+
+        for row in rows:
 
             src_attribute = row["src_attribute"]
             tgt_attribute = row["tgt_attribute"]
 
+            if not tgt_attribute:
+                continue
+
             if src_attribute is None:
+
                 expression = (
-                    f"CAST(NULL AS STRING) AS {tgt_attribute}"
+                    f"CAST(NULL AS STRING) "
+                    f"AS {tgt_attribute}"
                 )
 
             else:
-                source_lower = src_attribute.lower()
+
+                source_lower = (
+                    src_attribute.lower()
+                )
 
                 if any(
                     keyword in source_lower
@@ -438,25 +685,50 @@ def build_mapping_string(mapping_df):
                         "cast",
                     )
                 ):
+
                     expression = (
-                        f"{src_attribute} AS {tgt_attribute}"
+                        f"{src_attribute} "
+                        f"AS {tgt_attribute}"
                     )
 
                 else:
+
                     expression = (
                         f"CAST({src_attribute} AS STRING) "
                         f"AS {tgt_attribute}"
                     )
 
-            mapping_expressions.append(expression)
+            mapping_expressions.append(
+                expression
+            )
 
-        return ", ".join(mapping_expressions)
+        if not mapping_expressions:
+            raise ValueError(
+                "No valid canonical mapping expressions generated."
+            )
+
+        mapping_string = ", ".join(
+            mapping_expressions
+        )
+
+        logger.info(
+            f"Canonical mapping expression: "
+            f"{mapping_string}"
+        )
+
+        return mapping_string
 
     except Exception as exc:
+
         raise RuntimeError(
-            "Error while generating canonical mapping string"
+            "Error while generating canonical "
+            "mapping string"
         ) from exc
 
+
+# ============================================================================
+# MAPPED DATA
+# ============================================================================
 
 def create_mapped_data(
     source_df,
@@ -472,6 +744,7 @@ def create_mapped_data(
     """Create mapped canonical DataFrame."""
 
     try:
+
         source_df.createOrReplaceTempView(
             "delta_vw"
         )
@@ -485,17 +758,39 @@ def create_mapped_data(
             {join_condition}
         """
 
-        mapped_df = spark.sql(mapped_sql)
+        logger.info(
+            "Executing canonical mapping SQL."
+        )
+
+        mapped_df = spark.sql(
+            mapped_sql
+        )
+
+        record_count = (
+            mapped_df.count()
+        )
 
         logger.info(
             f"Canonical mapped data created for "
-            f"{src_tbl_nm}; count={mapped_df.count()}"
+            f"{src_tbl_nm}; count={record_count}"
         )
+
+        if record_count == 0:
+            raise GracefulExit(
+                f"No mapped canonical records for "
+                f"{src_tbl_nm}"
+            )
 
         return mapped_df
 
+    except GracefulExit:
+        raise
+
     except Exception as exc:
-        error_message = str(exc).split("stacktrace")[0]
+
+        error_message = (
+            str(exc).split("stacktrace")[0]
+        )
 
         log_event_detail(
             f"Creating mapped data - {src_tbl_nm}",
@@ -519,9 +814,14 @@ def create_mapped_data(
         )
 
         raise RuntimeError(
-            f"Error creating mapped data for {src_tbl_nm}"
+            f"Error creating mapped data for "
+            f"{src_tbl_nm}: {error_message}"
         ) from exc
 
+
+# ============================================================================
+# CREATE CANONICAL DATA
+# ============================================================================
 
 def create_canonical_view(
     src_tbl_nm,
@@ -561,11 +861,6 @@ def create_canonical_view(
         staging_start_time,
     )
 
-    if delta_df.count() == 0:
-        raise GracefulExit(
-            f"No delta data for {resolved_src_tbl_nm}"
-        )
-
     (
         mapping_df,
         join_condition,
@@ -602,6 +897,10 @@ def create_canonical_view(
     )
 
 
+# ============================================================================
+# WRITE TARGET
+# ============================================================================
+
 def write_to_target_table(
     tgt_schema,
     tgt_tbl_nm,
@@ -614,101 +913,155 @@ def write_to_target_table(
 ):
     """Write consolidated canonical data to Delta target."""
 
-    target_table = f"{tgt_schema}.{tgt_tbl_nm}"
+    target_table = (
+        f"{tgt_schema}.{tgt_tbl_nm}"
+    )
 
-    for attempt in range(5):
+    try:
 
-        try:
-            table_exists = spark.catalog.tableExists(
+        logger.info(
+            f"Canonical target write started: "
+            f"{target_table}"
+        )
+
+        # Ensure target schema exists.
+        spark.sql(
+            f"""
+            CREATE SCHEMA IF NOT EXISTS {tgt_schema}
+            """
+        )
+
+        table_exists = (
+            spark.catalog.tableExists(
                 target_table
             )
+        )
 
-            if not table_exists:
+        record_count = (
+            consolidated_df.count()
+        )
 
-                (
-                    consolidated_df.write
-                    .mode("overwrite")
-                    .option("overwriteSchema", "true")
-                    .saveAsTable(target_table)
+        logger.info(
+            f"Canonical target exists={table_exists}; "
+            f"records_to_write={record_count}"
+        )
+
+        if not table_exists:
+
+            (
+                consolidated_df.write
+                .format("delta")
+                .mode("overwrite")
+                .option(
+                    "overwriteSchema",
+                    "true",
                 )
-
-                logger.info(
-                    f"{target_table} created with "
-                    f"{consolidated_df.count()} records"
+                .saveAsTable(
+                    target_table
                 )
+            )
 
-            else:
+            logger.info(
+                f"{target_table} created with "
+                f"{record_count} records"
+            )
 
-                spark.sql(
-                    f"""
-                    DELETE FROM {target_table}
-                    WHERE {batch_condition}
-                      AND Source_Name = '{source_system_name}'
-                    """
+        else:
+
+            # Delete existing rows for the pending batch.
+            #
+            # Source_Name may not exist in every canonical
+            # test mapping, so delete by batch_id only.
+            spark.sql(
+                f"""
+                DELETE FROM {target_table}
+                WHERE {batch_condition}
+                """
+            )
+
+            (
+                consolidated_df.write
+                .format("delta")
+                .mode("append")
+                .option(
+                    "mergeSchema",
+                    "true",
                 )
-
-                (
-                    consolidated_df.write
-                    .mode("append")
-                    .option("mergeSchema", "true")
-                    .saveAsTable(target_table)
+                .saveAsTable(
+                    target_table
                 )
+            )
 
-                logger.info(
-                    f"{target_table} appended with "
-                    f"{consolidated_df.count()} records"
-                )
+            logger.info(
+                f"{target_table} appended with "
+                f"{record_count} records"
+            )
+
+        # OPTIMIZE is best effort.
+        try:
 
             spark.sql(
                 f"OPTIMIZE {target_table}"
             )
 
-            return
-
-        except Exception as exc:
-
-            if attempt == 4:
-                error_message = (
-                    str(exc).split("stacktrace")[0]
-                )
-
-                log_event_detail(
-                    f"Appending values in Canonical table - "
-                    f"{tgt_tbl_nm}",
-                    "Failed",
-                    error_message,
-                    run_url,
-                    source_identifier,
-                    source_system_name,
-                    job_id,
-                    MODULE_NAME,
-                    staging_start_time,
-                    cluster_id,
-                    run_id,
-                )
-
-                update_batch_log_tbl(
-                    "canonical",
-                    "N",
-                    batch_condition,
-                    source_system_name,
-                )
-
-                raise RuntimeError(
-                    f"Error writing Canonical table - "
-                    f"{tgt_tbl_nm}"
-                ) from exc
-
-            logger.warning(
-                f"Canonical write attempt {attempt + 1} "
-                f"failed. Retrying..."
+            logger.info(
+                f"OPTIMIZE completed for "
+                f"{target_table}"
             )
 
-            time.sleep(10)
+        except Exception as optimize_exc:
 
+            logger.warning(
+                f"OPTIMIZE skipped for "
+                f"{target_table}: "
+                f"{str(optimize_exc)}"
+            )
+
+        logger.info(
+            f"Canonical target write completed: "
+            f"{target_table}"
+        )
+
+    except Exception as exc:
+
+        error_message = (
+            str(exc).split("stacktrace")[0]
+        )
+
+        log_event_detail(
+            f"Writing Canonical table - "
+            f"{tgt_tbl_nm}",
+            "Failed",
+            error_message,
+            run_url,
+            source_identifier,
+            source_system_name,
+            job_id,
+            MODULE_NAME,
+            staging_start_time,
+            cluster_id,
+            run_id,
+        )
+
+        update_batch_log_tbl(
+            "canonical",
+            "N",
+            batch_condition,
+            source_system_name,
+        )
+
+        raise RuntimeError(
+            f"Error writing Canonical table - "
+            f"{tgt_tbl_nm}: {error_message}"
+        ) from exc
+
+
+# ============================================================================
+# MAIN PIPELINE
+# ============================================================================
 
 def main_canonical_pipeline():
-    """Execute the complete canonical pipeline."""
+    """Execute complete canonical pipeline."""
 
     (
         source_identifier,
@@ -717,6 +1070,7 @@ def main_canonical_pipeline():
     ) = read_parameters()
 
     run_url = get_notebook_run_url()
+
     staging_start_time = datetime.now()
 
     logger.info(
@@ -726,6 +1080,10 @@ def main_canonical_pipeline():
         f"target={target_table_name}"
     )
 
+    # ------------------------------------------------------------------------
+    # BATCH
+    # ------------------------------------------------------------------------
+
     batch_condition = get_batch_condition(
         source_system_name,
         source_identifier,
@@ -733,34 +1091,99 @@ def main_canonical_pipeline():
         staging_start_time,
     )
 
+    # ------------------------------------------------------------------------
+    # CANONICAL CONFIG
+    # ------------------------------------------------------------------------
+
     canonical_config_df = (
-        spark.table(canonical_config_tbl)
-        .filter(
-            F.lower(F.col("source_system_name"))
-            == source_identifier.lower()
+        spark.table(
+            canonical_config_tbl
         )
     )
+
+    canonical_config_df = (
+        canonical_config_df
+        .filter(
+            (
+                F.lower(
+                    F.trim(
+                        F.col(
+                            "source_system_name"
+                        )
+                    )
+                )
+                == source_system_name.strip().lower()
+            )
+            &
+            (
+                F.lower(
+                    F.trim(
+                        F.col(
+                            "source_identifier"
+                        )
+                    )
+                )
+                == source_identifier.strip().lower()
+            )
+        )
+    )
+
+    config_count = (
+        canonical_config_df.count()
+    )
+
+    logger.info(
+        f"Canonical configuration rows found: "
+        f"{config_count}"
+    )
+
+    if config_count == 0:
+
+        raise GracefulExit(
+            f"No canonical configuration found for "
+            f"source_identifier={source_identifier}, "
+            f"source_system_name={source_system_name}"
+        )
+
+    # ------------------------------------------------------------------------
+    # SOURCE TABLES
+    # ------------------------------------------------------------------------
 
     source_tables = (
         canonical_config_df
         .filter(
-            F.lower(F.col("tgt_tbl_nm"))
-            == target_table_name.lower()
+            F.lower(
+                F.trim(
+                    F.col("tgt_tbl_nm")
+                )
+            )
+            == target_table_name.strip().lower()
         )
-        .select("src_tbl_nm")
+        .select(
+            "src_tbl_nm"
+        )
         .distinct()
         .collect()
     )
 
     if not source_tables:
+
         raise GracefulExit(
             f"No canonical source tables found for "
             f"target {target_table_name}"
         )
 
+    # ------------------------------------------------------------------------
+    # CONSOLIDATE
+    # ------------------------------------------------------------------------
+
     consolidated_df = None
+
     target_schema = None
-    resolved_target_name = target_table_name
+
+    resolved_target_name = (
+        target_table_name
+    )
 
     for row in source_tables:
 
@@ -772,6 +1195,7 @@ def main_canonical_pipeline():
         )
 
         try:
+
             (
                 result_df,
                 target_schema,
@@ -788,9 +1212,13 @@ def main_canonical_pipeline():
             )
 
             if consolidated_df is None:
-                consolidated_df = result_df
+
+                consolidated_df = (
+                    result_df
+                )
 
             else:
+
                 consolidated_df = (
                     consolidated_df.unionByName(
                         result_df,
@@ -799,15 +1227,23 @@ def main_canonical_pipeline():
                 )
 
         except GracefulExit as exc:
+
             logger.info(
-                f"Skipping source table {src_tbl_nm}: {exc}"
+                f"Skipping source table "
+                f"{src_tbl_nm}: {exc}"
             )
+
             continue
+
+    # ------------------------------------------------------------------------
+    # VALIDATE CONSOLIDATED DATA
+    # ------------------------------------------------------------------------
 
     if (
         consolidated_df is None
         or consolidated_df.count() == 0
     ):
+
         log_event_detail(
             f"Canonical - {target_table_name}",
             "Passed",
@@ -827,6 +1263,24 @@ def main_canonical_pipeline():
             f"target table: {target_table_name}"
         )
 
+    final_record_count = (
+        consolidated_df.count()
+    )
+
+    logger.info(
+        f"Canonical consolidated data ready: "
+        f"{final_record_count} records"
+    )
+
+    logger.info(
+        f"Canonical target: "
+        f"{target_schema}.{resolved_target_name}"
+    )
+
+    # ------------------------------------------------------------------------
+    # WRITE
+    # ------------------------------------------------------------------------
+
     write_to_target_table(
         target_schema,
         resolved_target_name,
@@ -838,18 +1292,40 @@ def main_canonical_pipeline():
         staging_start_time,
     )
 
-    record_count = consolidated_df.count()
+    # ------------------------------------------------------------------------
+    # UPDATE BATCH STATUS
+    # ------------------------------------------------------------------------
+
+    update_batch_log_tbl(
+        "canonical",
+        "Y",
+        batch_condition,
+        source_system_name,
+    )
+
+    logger.info(
+        f"Canonical batch status updated to Y "
+        f"for source system {source_system_name}"
+    )
+
+    # ------------------------------------------------------------------------
+    # FINAL LOG
+    # ------------------------------------------------------------------------
 
     logger.info(
         f"Canonical table "
         f"{target_schema}.{resolved_target_name} "
-        f"updated with {record_count} records"
+        f"updated with "
+        f"{final_record_count} records"
     )
 
     log_event_detail(
         f"Canonical - {resolved_target_name}",
         "Passed",
-        f"Successfully processed {record_count} records.",
+        (
+            f"Successfully processed "
+            f"{final_record_count} records."
+        ),
         run_url,
         source_identifier,
         source_system_name,
@@ -861,20 +1337,36 @@ def main_canonical_pipeline():
     )
 
 
+# ============================================================================
+# SCRIPT ENTRY POINT
+# ============================================================================
+
 if __name__ == "__main__":
+
     try:
+
         main_canonical_pipeline()
 
     except GracefulExit as exc:
-        logger.info(str(exc))
+
+        logger.info(
+            str(exc)
+        )
+
 
 # ============================================================================
 # USER CONFIGURATION
 # ============================================================================
-# 1) Source/target schemas and table names are resolved from the supplied
-#    canonical configuration table. Do not hardcode business table names here.
-# 2) Databricks/Spark runtime must have access to the configured catalog/schema.
-# 3) If the target is migrated to Snowflake, configure the Databricks-to-Snowflake
-#    connection separately; do not place credentials in this source file.
+#
+# 1) Source/target schemas and table names are resolved from the
+#    canonical configuration table.
+#
+# 2) Databricks/Spark runtime must have access to the configured
+#    catalog/schema.
+#
+# 3) If the target is migrated to Snowflake, configure the
+#    Databricks-to-Snowflake connection separately.
+#
+# 4) Credentials must not be placed in this source file.
+#
 # ============================================================================
-
