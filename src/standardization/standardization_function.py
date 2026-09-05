@@ -1,10 +1,13 @@
-"""Compatibility boundary for the project's external standardization functions.
+"""Production boundary for the project's standardization functions.
 
-The supplied project references ``standardization_function.function_mapping`` but
-does not provide that module's implementation. This module deliberately does not
-invent rule functions. When the external implementation is available in the
-Databricks deployment, it is loaded; otherwise the mapping remains empty and the
-standardization pipeline reports the missing configured rule at execution time.
+The supplied project references `function_mapping` but does not supply the
+implementation of the referenced standardization functions. Therefore this
+module intentionally does not invent business rules.
+
+When the approved implementation is deployed, it can be exposed through the
+supported Databricks module import below. Until then, configured rule names
+fail explicitly in the standardization layer rather than being silently
+skipped or replaced with guessed transformations.
 """
 
 from __future__ import annotations
@@ -14,12 +17,7 @@ try:
 except (ImportError, ModuleNotFoundError):
     function_mapping = {}
 
+if not isinstance(function_mapping, dict):
+    raise TypeError("standardization_function.function_mapping must be a dict")
+
 __all__ = ["function_mapping"]
-
-# ============================================================================
-# USER CONFIGURATION
-# ============================================================================
-# This module contains reusable standardization functions. No credentials belong
-# here. Rule names/selection come from the project standardization configuration.
-# ============================================================================
-
