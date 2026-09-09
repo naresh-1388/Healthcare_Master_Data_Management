@@ -51,18 +51,20 @@ logger.setLevel(logging.INFO)
 # Environment configuration
 # ---------------------------------------------------------------------------
 
-TABLE_NAME = os.environ["table_name"]  # USER: set destination error/audit table name here via runtime config.
-AUDIT_TABLE_NAME = os.environ["audit_table_name"]  # USER: set audit table name here via runtime config.
-SERVER_HOSTNAME = os.environ["server_hostname"]  # USER: set Databricks SQL hostname here via secret/env.
-ACCESS_TOKEN = os.environ["access_token"]  # USER: set Databricks SQL access token via secret/env; never hardcode.
-WAREHOUSE_ID = os.environ["warehouse_id"]  # USER: set Databricks SQL warehouse ID here.
-API_KEY = os.environ["api_key"]
+# Runtime configuration. Values are supplied by the deployment environment;
+# credentials and tokens are never hard-coded in source control.
+TABLE_NAME = os.getenv("table_name")
+AUDIT_TABLE_NAME = os.getenv("audit_table_name")
+SERVER_HOSTNAME = os.getenv("server_hostname")
+ACCESS_TOKEN = os.getenv("access_token")
+WAREHOUSE_ID = os.getenv("warehouse_id")
+API_KEY = os.getenv("api_key")
 
-SECRET_NAME = os.environ["secret_name"]  # USER: set AWS Secrets Manager secret name here.
-REGION_NAME = os.environ["region"]
+SECRET_NAME = os.getenv("secret_name")
+REGION_NAME = os.getenv("region", "us-east-1")
 
-ORIEO_URL = os.environ["ORIEO_url"]  # USER: set ORIEO API base URL here.
-JISB_URL = os.environ["jisb_url"]  # USER: set JISB API URL here.
+ORIEO_URL = os.getenv("ORIEO_url")
+JISB_URL = os.getenv("jisb_url")
 
 
 # ---------------------------------------------------------------------------
@@ -111,16 +113,29 @@ def get_secret(
     return response["SecretBinary"]
 
 
-SECRET = get_secret(
-    SECRET_NAME,
-    REGION_NAME,
-)
+# Load API credentials lazily. Importing this module must not call AWS.
+ORIEO_USERNAME: Optional[str] = None
+ORIEO_PASSWORD: Optional[str] = None
+JISB_USERNAME: Optional[str] = None
+JISB_PASSWORD: Optional[str] = None
 
-ORIEO_USERNAME = SECRET.get("username")
-ORIEO_PASSWORD = SECRET.get("password")
 
-JISB_USERNAME = SECRET.get("jisb_username")
-JISB_PASSWORD = SECRET.get("jisb_password")
+def load_runtime_credentials() -> None:
+    """Load ORIEO/JISB credentials from AWS Secrets Manager at runtime."""
+    global ORIEO_USERNAME, ORIEO_PASSWORD
+    global JISB_USERNAME, JISB_PASSWORD
+
+    if not SECRET_NAME:
+        raise RuntimeError("Missing required runtime configuration: secret_name")
+
+    secret = get_secret(SECRET_NAME, REGION_NAME)
+    if not isinstance(secret, dict):
+        raise RuntimeError("AWS Secrets Manager secret must contain a JSON object")
+
+    ORIEO_USERNAME = secret.get("username")
+    ORIEO_PASSWORD = secret.get("password")
+    JISB_USERNAME = secret.get("jisb_username")
+    JISB_PASSWORD = secret.get("jisb_password")
 
 
 # ---------------------------------------------------------------------------
@@ -1299,6 +1314,8 @@ def lambda_handler(
     context: Any,
 ) -> Dict[str, Any]:
     """AWS Lambda entry point for SBC search."""
+    load_runtime_credentials()
+
     logger.info(
         "Lambda execution STARTED"
     )
@@ -1908,20 +1925,3 @@ def lambda_handler(
             "jisb"
         ),
     )
-
-# ============================================================================
-# USER CONFIGURATION - SET THESE IN THE RUNTIME ENVIRONMENT / AWS
-# ============================================================================
-# 1) table_name        : audit/error destination table name used by this module.
-# 2) audit_table_name  : audit table name used by this module.
-# 3) server_hostname   : Databricks SQL Statements API hostname.
-# 4) access_token      : Databricks SQL API access token; never hardcode it.
-# 5) warehouse_id      : Databricks SQL warehouse ID.
-# 6) secret_name       : AWS Secrets Manager secret containing ORIEO/JISB credentials.
-# 7) ORIEO_url         : ORIEO API base URL.
-# 8) jisb_url          : JISB API URL.
-# 9) BASIC_AUTH_TOKEN  : configure only if the supplied ORIEO login flow requires it.
-# 10) Keep all credentials in AWS Secrets Manager / Databricks secret configuration;
-#     never commit actual passwords, bearer tokens, or API keys.
-# ============================================================================
-

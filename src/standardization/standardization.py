@@ -1,16 +1,10 @@
 """
 Healthcare_MDM - RAW to Landing Standardization
 
-Source of truth:
-    rat_to_land_std (1).py
-
 Purpose:
-    RAW -> Landing standardization using configuration tables.
+    Apply configured RAW-to-Landing standardization rules and write the Landing data.
 
-Important:
-    - No business standardization rules are invented here.
-    - Actual configured rules come from ctl_std_entity_mstr.
-    - function_mapping must contain the configured rule functions.
+Rules are read from ctl_std_entity_mstr and executed through the shared function mapping.
 """
 
 from __future__ import annotations
@@ -32,16 +26,24 @@ from pyspark.sql.window import Window
 
 try:
     from src.core.runtime_config import (
-        CATALOG,
-        UTIL_SCHEMA,
-        RAW_SCHEMA,
-        LANDING_SCHEMA,
+        catalog as CATALOG,
+        util_schema as UTIL_SCHEMA,
+        raw_schema as RAW_SCHEMA,
+        lnd_schema as LANDING_SCHEMA,
     )
 except Exception:
-    CATALOG = "healthcare_mdm_dev"
-    UTIL_SCHEMA = f"{CATALOG}.util"
-    RAW_SCHEMA = f"{CATALOG}.raw"
-    LANDING_SCHEMA = f"{CATALOG}.landing"
+    try:
+        from core.runtime_config import (
+            catalog as CATALOG,
+            util_schema as UTIL_SCHEMA,
+            raw_schema as RAW_SCHEMA,
+            lnd_schema as LANDING_SCHEMA,
+        )
+    except Exception:
+        CATALOG = "HMDM_DEV"
+        UTIL_SCHEMA = f"{CATALOG}.util"
+        RAW_SCHEMA = f"{CATALOG}.raw"
+        LANDING_SCHEMA = f"{CATALOG}.landing"
 
 
 try:
@@ -147,19 +149,7 @@ def read_parameters(
     """
     Read standardization parameters.
 
-    Two supported execution modes:
-
-    1. Direct Python / Databricks notebook call:
-
-        read_parameters(
-            "TEST_HCP",
-            "TEST",
-            "test_hcp"
-        )
-
-    2. Script execution:
-
-        python standardization.py TEST_HCP TEST test_hcp
+    Accept direct function arguments or command-line parameters.
     """
 
     # -------------------------------------------------------------
@@ -480,6 +470,27 @@ def _parse_primary_key(
 
 
 # ---------------------------------------------------------------------
+# TABLE NAME HELPERS
+# ---------------------------------------------------------------------
+
+def _qualify_table(schema_name: str, table_name: str) -> str:
+    """Return a catalog-qualified table name without duplicating the catalog."""
+    schema_value = str(schema_name).strip()
+    table_value = str(table_name).strip()
+
+    if table_value.count(".") >= 2:
+        return table_value
+    if schema_value.count(".") >= 1:
+        return f"{schema_value}.{table_value}"
+    return f"{CATALOG}.{schema_value}.{table_value}"
+
+
+def _sql_literal(value: object) -> str:
+    """Escape a value for use in a Spark SQL string literal."""
+    return str(value).replace("'", "''")
+
+
+# ---------------------------------------------------------------------
 # PREPARE TABLES
 # ---------------------------------------------------------------------
 
@@ -509,13 +520,8 @@ def prepare_tables(
         "std_table_name"
     ]
 
-    raw_table = (
-        f"{CATALOG}.{raw_schema}.{raw_table_name}"
-    )
-
-    std_table = (
-        f"{CATALOG}.{std_schema}.{std_table_name}"
-    )
+    raw_table = _qualify_table(raw_schema, raw_table_name)
+    std_table = _qualify_table(std_schema, std_table_name)
 
     logger.info(
         "RAW table: %s",
@@ -546,7 +552,7 @@ def prepare_tables(
     # ACTIVE RECORD SQL
     #
     # Original source calls this initial_load_sql.
-    # Current ctl_entity_mstr uses active_record_sql.
+    # Use the active-record expression configured for the source entity.
     # Prefer active_record_sql because that is the actual
     # project configuration column.
     # -------------------------------------------------------------
@@ -637,7 +643,7 @@ def prepare_tables(
     # -------------------------------------------------------------
 
     source_filter = (
-        f"Source_Name = '{source_system_name}'"
+        f"Source_Name = '{_sql_literal(source_system_name)}'"
     )
 
     # -------------------------------------------------------------
@@ -859,67 +865,63 @@ def execute_standardization(
 
 def write_standardization_table(
     stdn_df: DataFrame,
-    std_table: str
+    std_table: str,
+    full_load_flag: bool = False,
 ):
     """
     Write standardized dataframe to Landing.
-    """
 
+    Full loads replace the Landing target. Incremental loads append the
+    Append the selected batch while retaining existing standardized data.
+    """
     record_count = stdn_df.count()
 
     if record_count == 0:
-
-        raise GracefulExit(
-            f"No new data to load for {std_table}"
-        )
+        raise GracefulExit(f"No new data to load for {std_table}")
 
     logger.info(
-        "Writing %s records into %s",
+        "Writing %s records into %s using %s mode",
         record_count,
-        std_table
+        std_table,
+        "overwrite" if full_load_flag else "append",
     )
 
-    output_df = stdn_df.withColumn(
-        "LOAD_DATE",
-        F.current_timestamp()
-    )
+    output_df = stdn_df.withColumn("LOAD_DATE", F.current_timestamp())
+    load_mode = "overwrite" if full_load_flag else "append"
+
+    if spark.catalog.tableExists(std_table) and not full_load_flag:
+        target_schema = spark.table(std_table).schema
+        source_columns = {c.upper(): c for c in output_df.columns}
+        select_exprs = []
+
+        for field in target_schema:
+            target_col = field.name
+            source_col = source_columns.get(target_col.upper())
+            if source_col:
+                select_exprs.append(
+                    F.col(source_col).cast(field.dataType).alias(target_col)
+                )
+            else:
+                select_exprs.append(
+                    F.lit(None).cast(field.dataType).alias(target_col)
+                )
+
+        output_df = output_df.select(*select_exprs)
 
     (
         output_df.write
         .format("delta")
-        .mode("overwrite")
+        .mode(load_mode)
         .saveAsTable(std_table)
     )
 
-    logger.info(
-        "Data successfully loaded into %s",
-        std_table
-    )
-
-    # -------------------------------------------------------------
-    # OPTIMIZE
-    # -------------------------------------------------------------
+    logger.info("Data successfully loaded into %s", std_table)
 
     try:
-
-        spark.sql(
-            f"OPTIMIZE {std_table}"
-        )
-
-        logger.info(
-            "OPTIMIZE completed for %s",
-            std_table
-        )
-
+        spark.sql(f"OPTIMIZE {std_table}")
+        logger.info("OPTIMIZE completed for %s", std_table)
     except Exception as exc:
-
-        # OPTIMIZE failure should be visible but should not
-        # make the successful data write look like a failure.
-        logger.warning(
-            "OPTIMIZE failed for %s: %s",
-            std_table,
-            exc
-        )
+        logger.warning("OPTIMIZE failed for %s: %s", std_table, exc)
 
 
 # ---------------------------------------------------------------------
@@ -941,7 +943,7 @@ def update_batch_standardization_status(
 
     query = f"""
         UPDATE {BATCH_LOG_TBL}
-        SET stdz_status = '{status}'
+        SET stdz_status = '{_sql_literal(status)}'
         WHERE {condition}
     """
 
@@ -1234,9 +1236,18 @@ def main_pipeline(
         # WRITE LANDING
         # ---------------------------------------------------------
 
+        raw_full_load_flag = ingestion_details["full_load_flag"]
+        if isinstance(raw_full_load_flag, str):
+            full_load_flag = raw_full_load_flag.strip().upper() in (
+                "TRUE", "Y", "YES", "1"
+            )
+        else:
+            full_load_flag = bool(raw_full_load_flag)
+
         write_standardization_table(
             stdn_df,
-            std_table
+            std_table,
+            full_load_flag=full_load_flag
         )
 
         # ---------------------------------------------------------

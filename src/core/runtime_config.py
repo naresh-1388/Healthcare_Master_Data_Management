@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 import os
-
+import re
 
 # ============================================================
 # Global Runtime Variables
@@ -11,17 +11,18 @@ omni_catalog = None
 env = None
 mail_recipient = None
 s3_bucket = None
+spark = None
+dbutils = None
 
 # Safe runtime defaults. Environment-specific values are resolved below.
 DEFAULT_ALERT_EMAILS = []
+
 email_config = {
     "smtp_server": os.getenv("HEALTHCARE_MDM_SMTP_SERVER", ""),
     "smtp_user": os.getenv("HEALTHCARE_MDM_SMTP_USER", ""),
 }
-archive_path = None
 
-spark = None
-dbutils = None
+archive_path = os.getenv("HEALTHCARE_MDM_ARCHIVE_PATH")
 
 
 # ============================================================
@@ -29,7 +30,6 @@ dbutils = None
 # ============================================================
 
 def detect_environment(spark_session: SparkSession):
-
     local_catalog = None
     local_env = None
     local_mail_recipient = None
@@ -50,56 +50,40 @@ def detect_environment(spark_session: SparkSession):
         # 1. TEST
         # ----------------------------------------------------
         if base_url.startswith("https://tst-") or "tst" in base_url:
-
-            local_catalog = "detst_eda"
+            local_catalog = "HMDM_TST"
             local_env = "tst"
             local_mail_recipient = "test"
             local_s3_bucket = (
                 "tpc-aws-ted-tst-eda-kokoroih-eu-central-1"
             )
-
             env_matched = True
 
         # ----------------------------------------------------
         # 2. PROD
         # ----------------------------------------------------
         elif base_url.startswith("https://prd-") or "prd" in base_url:
-
-            local_catalog = "deprd_eda"
+            local_catalog = "HMDM_PROD"
             local_env = "prd"
             local_mail_recipient = "ops"
             local_s3_bucket = (
                 "tpc-aws-ted-prd-eda-kokoroih-eu-central-1"
             )
-
             env_matched = True
 
         # ----------------------------------------------------
         # 3. DEV / LOCAL
-        #
-        # Actual project environment:
-        # Catalog : healthcare_mdm_dev
-        # S3      : healthcare-master-data-management
-        #
-        # dbc- detection is required for the current
-        # Databricks workspace.
         # ----------------------------------------------------
         elif (
             "dev" in base_url
             or base_url == "local_dev_workspace"
             or base_url.startswith("dbc-")
         ):
-
-            local_catalog = "healthcare_mdm_dev"
+            local_catalog = "HMDM_DEV"
             local_env = "dev"
             local_mail_recipient = "dev"
             local_s3_bucket = "healthcare-master-data-management"
-
             env_matched = True
 
-        # ----------------------------------------------------
-        # Unknown Environment
-        # ----------------------------------------------------
         if not env_matched:
             raise ValueError(
                 f"Unknown Environment for workspace: {base_url}"
@@ -113,7 +97,6 @@ def detect_environment(spark_session: SparkSession):
         )
 
     except Exception as e:
-
         if "Unknown Environment" in str(e):
             raise e
 
@@ -126,7 +109,6 @@ def detect_environment(spark_session: SparkSession):
 # ============================================================
 
 try:
-
     spark = SparkSession.builder.getOrCreate()
 
     (
@@ -140,22 +122,15 @@ try:
     print(f"Environment  : {env}")
     print(f"S3 Bucket    : {s3_bucket}")
 
-except Exception:
-    pass
+except Exception as e:
+    print(f"Environment initialization skipped: {e}")
 
 
 # ============================================================
 # Schema Configuration
-#
-# IMPORTANT:
-# All utility/control/config table names are derived from
-# util_schema.
-#
-# Individual Python files should NOT hardcode these table names.
 # ============================================================
 
 try:
-
     # --------------------------------------------------------
     # Raw
     # --------------------------------------------------------
@@ -178,22 +153,16 @@ try:
 
     # --------------------------------------------------------
     # Utility / Control
-    #
-    # NEW PROJECT STANDARD:
-    # healthcare_mdm_dev.util
     # --------------------------------------------------------
     util_schema = f"{catalog}.util"
 
-    # Compatibility aliases used by the standardization module.
+    # Compatibility aliases used by project modules.
     CATALOG = catalog
     UTIL_SCHEMA = util_schema
     RAW_SCHEMA = raw_schema
     LANDING_SCHEMA = lnd_schema
     STAGING_SCHEMA = stg_schema
     PUBLISH_SCHEMA = publish_schema
-
-    # Default archive root is configuration-driven; no source path is invented.
-    archive_path = os.getenv("HEALTHCARE_MDM_ARCHIVE_PATH")
 
     print(f"Raw Schema     : {raw_schema}")
     print(f"Landing Schema : {lnd_schema}")
@@ -207,53 +176,29 @@ except Exception as e:
 
 # ============================================================
 # Utility / Control Tables
-#
-# These are centrally derived from util_schema.
 # ============================================================
 
 try:
+    ingestion_config_tbl = f"{util_schema}.ctl_entity_mstr"
 
-    # Ingestion configuration
-    ingestion_config_tbl = (
-        f"{util_schema}.ctl_entity_mstr"
-    )
-
-    # Standardization configuration
     standardization_config_tbl = (
         f"{util_schema}.ctl_std_entity_mstr"
     )
 
-    # Canonical mapping configuration
     canonical_config_tbl = (
         f"{util_schema}.ctl_can_mapg"
     )
 
-    # General execution log
-    log_tbl_nm = (
-        f"{util_schema}.ctl_log_tbl"
-    )
+    log_tbl_nm = f"{util_schema}.ctl_log_tbl"
 
-    # DQ execution log
-    dqm_log_tbl = (
-        f"{util_schema}.ctl_dqm_log_tbl"
-    )
+    dqm_log_tbl = f"{util_schema}.ctl_dqm_log_tbl"
 
-    # DQ rejected records
-    dqm_reject_tbl = (
-        f"{util_schema}.dqm_reject_tbl"
-    )
+    dqm_reject_tbl = f"{util_schema}.dqm_reject_tbl"
 
-    # DQ rule configuration
-    dqm_config_tbl = (
-        f"{util_schema}.ctl_dq_entity_mstr"
-    )
+    dqm_config_tbl = f"{util_schema}.ctl_dq_entity_mstr"
 
-    # Batch control log
-    batch_log_tbl = (
-        f"{util_schema}.ctl_batch_log_tbl"
-    )
+    batch_log_tbl = f"{util_schema}.ctl_batch_log_tbl"
 
-    # Mailing list configuration
     mail_master_tbl = (
         f"{util_schema}.ctl_mailing_list_mstr"
     )
@@ -273,16 +218,13 @@ job_id = "0000"
 run_id = "0000"
 task_id = "0000"
 
-
 try:
-
     from pyspark.dbutils import DBUtils
 
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
 
     try:
-
         ctx = (
             dbutils.notebook
             .entry_point
@@ -296,8 +238,7 @@ try:
         job_id = ctx.jobId().get()
         task_id = ctx.idInJob().get()
 
-    except Exception as inner_err:
-
+    except Exception:
         print(
             "Warning: Failed to extract job context. "
             "Using default runtime IDs."
@@ -309,7 +250,6 @@ try:
         task_id = "0000"
 
 except Exception:
-
     print(
         "DBUtils not available. "
         "Using default runtime IDs."
@@ -321,24 +261,24 @@ except Exception:
 # ============================================================
 
 def get_notebook_run_url():
-
     """
-    Constructs the Databricks notebook run URL using
+    Construct the Databricks notebook run URL using
     the current workspace URL and runtime job context.
     """
-
     try:
-
-        spark_session = (
-            SparkSession.builder.getOrCreate()
-        )
+        spark_session = SparkSession.builder.getOrCreate()
 
         base_url = spark_session.conf.get(
             "spark.databricks.workspaceUrl"
         )
+        base_url = base_url.strip()
+        if base_url.startswith("https://"):
+            base_url = base_url[len("https://"): ]
+        elif base_url.startswith("http://"):
+            base_url = base_url[len("http://"): ]
+        base_url = base_url.rstrip("/")
 
     except Exception:
-
         base_url = "unknown.databricks.com"
 
     run_url = (
@@ -355,46 +295,34 @@ def get_notebook_run_url():
 # Batch Status Filter
 # ============================================================
 
-def get_batch_status_filter(
-    module,
-    source_system_name
-):
-
+def get_batch_status_filter(module, source_system_name):
     if (
         module.lower() == "rawingestion"
         or module.lower() == "raw_ingestion"
     ):
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and coalesce(raw_ingestion_status,'N')!='Y'"
         )
 
     elif module.lower() == "stdz":
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and raw_ingestion_status='Y' "
             f"and coalesce(stdz_status,'N')!='Y'"
         )
 
     elif module.lower() == "canonical":
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and raw_ingestion_status='Y' "
             f"and stdz_status='Y' "
             f"and coalesce(canonical_status,'N')!='Y'"
         )
 
     elif module.lower() == "dq":
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and raw_ingestion_status='Y' "
             f"and stdz_status='Y' "
             f"and canonical_status='Y' "
@@ -402,10 +330,8 @@ def get_batch_status_filter(
         )
 
     elif module.lower() == "ingress":
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and raw_ingestion_status='Y' "
             f"and stdz_status='Y' "
             f"and canonical_status='Y' "
@@ -414,10 +340,8 @@ def get_batch_status_filter(
         )
 
     elif module.lower() == "egress":
-
         return (
-            f"source_system_name = "
-            f"'{source_system_name}' "
+            f"source_system_name = '{source_system_name}' "
             f"and raw_ingestion_status='Y' "
             f"and stdz_status='Y' "
             f"and canonical_status='Y' "
@@ -427,76 +351,92 @@ def get_batch_status_filter(
         )
 
     else:
-
-        return None
+        raise ValueError(
+            f"Unsupported batch-status module: {module}"
+        )
 
 
 # ============================================================
 # Update Batch Log
 # ============================================================
 
-def update_batch_log_tbl(
-    column,
-    value,
-    batch_id,
-    source
-):
+def update_batch_log_tbl(column, value, batch_id=None, source=None):
+    """
+    Update a batch-status column in the control table.
 
+    Project callers use module names such as:
+      raw_ingestion, stdz, canonical, dq, ingress, egress
+
+    The physical control-table columns are:
+      raw_ingestion_status, stdz_status, canonical_status,
+      dq_status, ingress_status, egress_status
+
+    batch_id may be either a numeric ID or an existing SQL condition such as
+    "batch_id IN (20260906060913)".
+    """
     try:
+        source = "" if source is None else str(source).replace("'", "''")
+        value = "" if value is None else str(value).replace("'", "''")
+
+        column_map = {
+            "rawingestion": "raw_ingestion_status",
+            "raw_ingestion": "raw_ingestion_status",
+            "stdz": "stdz_status",
+            "canonical": "canonical_status",
+            "dq": "dq_status",
+            "ingress": "ingress_status",
+            "egress": "egress_status",
+        }
+
+        column_key = str(column).strip().lower()
+        column_status = column_map.get(column_key, column)
 
         if batch_id is None or batch_id == "":
+            where_clause = f"source_system_name = '{source}'"
 
-            batch_id_filter = get_batch_status_filter(
-                column,
-                source
-            )
+        elif isinstance(batch_id, str):
+            batch_id_text = batch_id.strip()
 
-            column_status = column + "_status"
-
-            spark.sql(
-                f"""
-                UPDATE {batch_log_tbl}
-                SET {column_status} = '{value}'
-                WHERE {batch_id_filter}
-                """
-            )
+            if batch_id_text.lower().startswith("batch_id "):
+                where_clause = (
+                    f"({batch_id_text}) "
+                    f"AND source_system_name = '{source}'"
+                )
+            else:
+                normalized_batch_id = int(batch_id_text)
+                where_clause = (
+                    f"batch_id = {normalized_batch_id} "
+                    f"AND source_system_name = '{source}'"
+                )
 
         else:
-
-            column_status = column + "_status"
-
-            spark.sql(
-                f"""
-                UPDATE {batch_log_tbl}
-                SET {column_status} = '{value}'
-                WHERE batch_id = {batch_id}
-                  AND source_system_name = '{source}'
-                """
+            normalized_batch_id = int(batch_id)
+            where_clause = (
+                f"batch_id = {normalized_batch_id} "
+                f"AND source_system_name = '{source}'"
             )
 
-    except Exception as e:
-
-        print(e)
-
-        final_column = (
-            column + "_status"
-            if batch_id is None or batch_id == ""
-            else column
+        spark.sql(
+            f"""
+            UPDATE {batch_log_tbl}
+            SET {column_status} = '{value}'
+            WHERE {where_clause}
+            """
         )
 
-        raise RuntimeError(
-            f"Error while updating "
-            f"{batch_log_tbl} "
-            f"for column {final_column}"
-        ) from e
+    except Exception as e:
+        print(e)
 
+        raise RuntimeError(
+            f"Error while updating {batch_log_tbl} "
+            f"for column {column}"
+        ) from e
 
 # ============================================================
 # Mailing List
 # ============================================================
 
 def get_maillist(source_name):
-
     email_ids_df = spark.sql(
         f"""
         SELECT

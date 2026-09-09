@@ -3,7 +3,7 @@ Data I/O utilities for Healthcare MDM.
 
 Source:
 - Existing common_functions.py
-- Project behavior is preserved; no new business rules added.
+- Purpose: provide shared data-access helpers for the project pipelines.
 """
 
 from datetime import datetime

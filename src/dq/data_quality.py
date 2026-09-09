@@ -1,32 +1,17 @@
-"""
-Healthcare MDM Data Quality
-
-Source of truth:
-    Data Info.xlsx -> Land_to_Stag
-
-Supported DQ rule types:
-    null_check
-    name_address_completeness_check
-    address_mdr_check
-    mdr_check
-    affiliation_mdr_check
-    hierarchy_mdr_check
-
-The 24 default DQ rules below are taken from the supplied
-Land_to_Stag mapping.
-
-Source-specific DQ configuration can additionally be loaded
-from the centralized DQ control table defined in common_variables.py.
-
-No credentials are hardcoded here.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    LongType,
+    TimestampType,
+)
 from pyspark.sql import functions as F
 
 
@@ -36,7 +21,7 @@ MODULE_NAME = "DATA_QUALITY"
 
 
 # ---------------------------------------------------------------------
-# Existing project control-table references
+# Control tables
 # ---------------------------------------------------------------------
 
 try:
@@ -47,41 +32,31 @@ try:
         batch_log_tbl,
         log_tbl_nm,
     )
-
 except Exception:
-
     try:
-        from ..core.runtime_config import (
+        from core.runtime_config import (
             dqm_config_tbl,
             dqm_log_tbl,
             dqm_reject_tbl,
             batch_log_tbl,
             log_tbl_nm,
         )
-
     except Exception:
-
         # Local/test fallback only.
-        # Production Databricks execution should resolve these
-        # from common_variables.py.
         dqm_config_tbl = (
-            "healthcare_mdm_dev.util.ctl_dq_entity_mstr"
+            "HMDM_DEV.util.ctl_dq_entity_mstr"
         )
-
         dqm_log_tbl = (
-            "healthcare_mdm_dev.util.ctl_dqm_log_tbl"
+            "HMDM_DEV.util.ctl_dqm_log_tbl"
         )
-
         dqm_reject_tbl = (
-            "healthcare_mdm_dev.util.dqm_reject_tbl"
+            "HMDM_DEV.util.dqm_reject_tbl"
         )
-
         batch_log_tbl = (
-            "healthcare_mdm_dev.util.ctl_batch_log_tbl"
+            "HMDM_DEV.util.ctl_batch_log_tbl"
         )
-
         log_tbl_nm = (
-            "healthcare_mdm_dev.util.ctl_log_tbl"
+            "HMDM_DEV.util.ctl_log_tbl"
         )
 
 
@@ -106,201 +81,177 @@ class DQRule:
 
 
 # ---------------------------------------------------------------------
-# Exact Land_to_Stag rules from Data Info.xlsx
+# Configured Landing-to-Staging DQ rules
 # ---------------------------------------------------------------------
 
 DQ_RULES: List[DQRule] = [
-
     DQRule(
-        "Par_lake_lnd_hcp_name",
+        "hcp_name",
         "null_check",
         "Reject records if the value of the column is Null",
         "hco_name",
-        "Par_lake_stg_hco_name",
+        "hco_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_name",
+        "hcp_name",
         "null_check",
         "Reject records if the value of the column is Null",
         "first_name",
-        "Par_lake_stg_hco_name",
+        "hco_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_name",
+        "hcp_name",
         "name_address_completeness_check",
         "Reject records in name table if no complete address is present",
         "source_id",
-        "Par_lake_stg_hcp_name",
+        "hcp_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_name",
+        "hco_name",
         "name_address_completeness_check",
         "Reject records in name table if no complete address is present",
         "source_id",
-        "Par_lake_stg_hco_name",
+        "hco_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_address",
+        "hcp_address",
         "address_mdr_check",
         "Reject records if no complete address is present or source_fk is not present in name table",
         "source_fk",
-        "Par_lake_stg_hcp_address",
+        "hcp_address",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_address",
+        "hco_address",
         "address_mdr_check",
         "Reject records if no complete address is present or source_fk is not present in name table",
         "source_fk",
-        "Par_lake_stg_hco_address",
+        "hco_address",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_email",
+        "hcp_email",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in email table",
         "source_fk",
-        "Par_lake_stg_hcp_email",
+        "hcp_email",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_alternatename",
+        "hcp_alternate_name",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in alternate name table",
         "source_fk",
-        "Par_lake_stg_hcp_alternatename",
+        "hcp_alternate_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_identification",
+        "hcp_identification",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in identification table",
         "source_fk",
-        "Par_lake_stg_hcp_identification",
+        "hcp_identification",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_specialty",
+        "hcp_specialty",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in specialty table",
         "source_fk",
-        "Par_lake_stg_hcp_specialty",
+        "hcp_specialty",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_phone",
+        "hcp_phone",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
         "source_fk",
-        "Par_lake_stg_hcp_phone",
+        "hcp_phone",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_education",
+        "hcp_education",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in education table",
         "source_fk",
-        "Par_lake_stg_hcp_education",
+        "hcp_education",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_origin_university",
+        "hcp_origin_university",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in origin university table",
         "source_fk",
-        "Par_lake_stg_hcp_origin_university",
+        "hcp_origin_university",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_tax",
+        "hcp_tax",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in table",
         "source_fk",
-        "Par_lake_stg_hcp_tax",
+        "hcp_tax",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_tax",
+        "hco_tax",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in table",
         "source_fk",
-        "Par_lake_stg_hco_tax",
+        "hco_tax",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_email",
+        "hco_email",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in email table",
         "source_fk",
-        "Par_lake_stg_hco_email",
+        "hco_email",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_alternatename",
+        "hco_alternate_name",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in alternate name table",
         "source_fk",
-        "Par_lake_stg_hco_alternatename",
+        "hco_alternate_name",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_identification",
+        "hco_identification",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in identification table",
         "source_fk",
-        "Par_lake_stg_hco_identification",
+        "hco_identification",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_specialty",
+        "hco_specialty",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in specialty table",
         "source_fk",
-        "Par_lake_stg_hco_specialty",
+        "hco_specialty",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_phone",
+        "hco_phone",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
         "source_fk",
-        "Par_lake_stg_hco_phone",
+        "hco_phone",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_hco_affiliation",
+        "hcp_hco_affiliation",
         "affiliation_mdr_check",
         "Reject records in name table if source id is not present",
         "source_id",
-        "Par_lake_stg_hcp_hco_affiliation",
+        "hcp_hco_affiliation",
     ),
-
     DQRule(
-        "Par_lake_lnd_hco_hco_hierarchy",
+        "hco_hco_hierarchy",
         "hierarchy_mdr_check",
         "Reject records if source id is not present in name table",
         "source_id",
-        "Par_lake_stg_hco_hierarchy",
+        "hco_hco_hierarchy",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_tendencies",
+        "hcp_tendencies",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
         "source_fk",
-        "Par_lake_stg_hcp_tendencies",
+        "hcp_tendencies",
     ),
-
     DQRule(
-        "Par_lake_lnd_hcp_language",
+        "hcp_language",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
         "source_fk",
-        "Par_lake_stg_hcp_language",
+        "hcp_language",
     ),
 ]
 
@@ -331,9 +282,7 @@ def resolve_column(
     df: DataFrame,
     column_name: str,
 ):
-    """
-    Resolve dataframe column case-insensitively.
-    """
+    """Resolve dataframe column case-insensitively."""
 
     if df is None:
         raise DQProcessingError(
@@ -350,9 +299,7 @@ def resolve_column(
         for column in df.columns
     }
 
-    actual = lookup.get(
-        column_name.lower()
-    )
+    actual = lookup.get(column_name.lower())
 
     if actual is None:
         raise DQProcessingError(
@@ -365,31 +312,101 @@ def resolve_column(
 
 
 def non_blank(column):
-    """
-    Treat NULL and blank/whitespace strings as invalid.
-    """
+    """Treat NULL and blank/whitespace strings as invalid."""
 
     return (
         column.isNotNull()
         & (
-            F.trim(
-                column.cast("string")
-            ) != ""
+            F.trim(column.cast("string")) != ""
         )
     )
 
 
 def table_exists(table_name: str) -> bool:
-    """
-    Safe table-existence check.
-    """
+    """Safe table-existence check."""
 
     try:
-        return spark.catalog.tableExists(
-            table_name
-        )
+        return spark.catalog.tableExists(table_name)
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------
+# Batch handling
+# ---------------------------------------------------------------------
+
+def resolve_batch_id(
+    source_df: DataFrame,
+    batch_id: Optional[int] = None,
+) -> Optional[int]:
+    """
+    Resolve the DQ batch.
+
+    If batch_id is explicitly supplied, use it.
+
+    Otherwise, when BATCH_ID exists, process only the latest
+    batch in the source dataframe.
+
+    This prevents historical batches from being processed again
+    when the staging table contains multiple batches.
+    """
+
+    if batch_id is not None:
+        return int(batch_id)
+
+    batch_column = None
+
+    for column in source_df.columns:
+        if column.lower() == "batch_id":
+            batch_column = column
+            break
+
+    if batch_column is None:
+        return None
+
+    latest_row = (
+        source_df
+        .select(F.max(F.col(batch_column)).alias("_latest_batch_id"))
+        .collect()[0]
+    )
+
+    latest_batch_id = latest_row["_latest_batch_id"]
+
+    if latest_batch_id is None:
+        return None
+
+    return int(latest_batch_id)
+
+
+def filter_to_batch(
+    source_df: DataFrame,
+    batch_id: Optional[int] = None,
+) -> Tuple[DataFrame, Optional[int]]:
+    """
+    Restrict source dataframe to one batch.
+
+    If BATCH_ID is present and batch_id is not supplied,
+    the latest BATCH_ID is selected.
+    """
+
+    resolved_batch_id = resolve_batch_id(
+        source_df,
+        batch_id,
+    )
+
+    if resolved_batch_id is None:
+        return source_df, None
+
+    batch_column = resolve_column(
+        source_df,
+        "BATCH_ID",
+    )
+
+    filtered_df = source_df.filter(
+        batch_column == F.lit(resolved_batch_id)
+    )
+
+    return filtered_df, resolved_batch_id
 
 
 # ---------------------------------------------------------------------
@@ -406,13 +423,9 @@ def apply_null_check(
         column_name,
     )
 
-    valid_condition = non_blank(
-        column
-    )
+    valid_condition = non_blank(column)
 
-    passed = df.filter(
-        valid_condition
-    )
+    passed = df.filter(valid_condition)
 
     rejected = df.filter(
         ~valid_condition
@@ -443,9 +456,7 @@ def apply_name_address_completeness_check(
 
     complete_addresses = (
         address_df
-        .filter(
-            non_blank(address_key)
-        )
+        .filter(non_blank(address_key))
         .select(
             address_key.alias("_dq_key")
         )
@@ -522,29 +533,23 @@ def apply_address_mdr_check(
     }
 
     for candidate in name_key_candidates:
-
         if candidate.lower() in name_columns:
-
             name_key = resolve_column(
                 name_df,
                 candidate,
             )
-
             break
 
     if name_key is None:
-
         raise DQProcessingError(
-            "Unable to identify the name-table "
-            "key column required by address_mdr_check. "
+            "Unable to identify the name-table key column "
+            "required by address_mdr_check. "
             f"Available columns: {name_df.columns}"
         )
 
     name_keys = (
         name_df
-        .filter(
-            non_blank(name_key)
-        )
+        .filter(non_blank(name_key))
         .select(
             name_key.alias("_dq_name_key")
         )
@@ -624,29 +629,22 @@ def apply_mdr_check(
     }
 
     for candidate in parent_key_candidates:
-
         if candidate.lower() in parent_columns:
-
             parent_key = resolve_column(
                 parent_df,
                 candidate,
             )
-
             break
 
     if parent_key is None:
-
         raise DQProcessingError(
-            "Unable to identify parent key "
-            "for mdr_check. "
+            "Unable to identify parent key for mdr_check. "
             f"Available columns: {parent_df.columns}"
         )
 
     parent_keys = (
         parent_df
-        .filter(
-            non_blank(parent_key)
-        )
+        .filter(non_blank(parent_key))
         .select(
             parent_key.alias("_dq_parent_key")
         )
@@ -744,11 +742,7 @@ def apply_rule(
             "DQ rule cannot be None."
         )
 
-    rule_type = (
-        rule.rule_name
-        .strip()
-        .lower()
-    )
+    rule_type = rule.rule_name.strip().lower()
 
     if rule_type == "null_check":
 
@@ -760,7 +754,6 @@ def apply_rule(
     if rule_type == "name_address_completeness_check":
 
         if reference_df is None:
-
             raise DQProcessingError(
                 "Address reference dataframe is required "
                 "for name_address_completeness_check."
@@ -775,7 +768,6 @@ def apply_rule(
     if rule_type == "address_mdr_check":
 
         if reference_df is None:
-
             raise DQProcessingError(
                 "Name reference dataframe is required "
                 "for address_mdr_check."
@@ -790,7 +782,6 @@ def apply_rule(
     if rule_type == "mdr_check":
 
         if reference_df is None:
-
             raise DQProcessingError(
                 "Parent/reference dataframe is required "
                 "for mdr_check."
@@ -805,7 +796,6 @@ def apply_rule(
     if rule_type == "affiliation_mdr_check":
 
         if reference_df is None:
-
             raise DQProcessingError(
                 "Name dataframe is required "
                 "for affiliation_mdr_check."
@@ -820,7 +810,6 @@ def apply_rule(
     if rule_type == "hierarchy_mdr_check":
 
         if reference_df is None:
-
             raise DQProcessingError(
                 "Name dataframe is required "
                 "for hierarchy_mdr_check."
@@ -885,9 +874,9 @@ def run_single_rule(
 ) -> Tuple[DataFrame, DataFrame]:
 
     passed, rejected = apply_rule(
-        rule,
-        source_df,
-        reference_df,
+        rule=rule,
+        source_df=source_df,
+        reference_df=reference_df,
     )
 
     passed = add_dq_metadata(
@@ -935,6 +924,7 @@ def _control_row_to_rule(row) -> DQRule:
 
     return DQRule(
         source_table=source_table,
+        # Dispatcher requires rule type here.
         rule_name=rule_type,
         rule_description=description,
         dq_application_column=dq_column,
@@ -954,9 +944,7 @@ def get_configured_rules_for_source(
     if not source_identifier:
         return []
 
-    if not table_exists(
-        DQ_CONFIG_TABLE
-    ):
+    if not table_exists(DQ_CONFIG_TABLE):
         return []
 
     df = spark.table(
@@ -990,10 +978,10 @@ def get_configured_rules_for_source(
     }
 
     if missing_columns:
-
         raise DQProcessingError(
             "DQ configuration table is missing "
-            f"required columns: {sorted(missing_columns)}"
+            f"required columns: "
+            f"{sorted(missing_columns)}"
         )
 
     condition = (
@@ -1053,7 +1041,6 @@ def get_configured_rules_for_source(
 # ---------------------------------------------------------------------
 
 def get_rules() -> List[DQRule]:
-
     return list(DQ_RULES)
 
 
@@ -1086,7 +1073,6 @@ def get_rules_for_source(
 
 
 def get_rule_count() -> int:
-
     return len(DQ_RULES)
 
 
@@ -1106,7 +1092,6 @@ def execute_rules(
         )
 
     if not rules:
-
         raise DQProcessingError(
             "No active DQ rules found for the supplied source."
         )
@@ -1149,9 +1134,7 @@ def execute_rules(
 
     else:
 
-        rejected_df = (
-            source_df.limit(0)
-        )
+        rejected_df = source_df.limit(0)
 
     return passed_df, rejected_df
 
@@ -1180,6 +1163,7 @@ def execute_source_dq(
     source_table: str,
     source_system_name: Optional[str] = None,
     reference_table: Optional[str] = None,
+    batch_id: Optional[int] = None,
 ) -> Tuple[DataFrame, DataFrame]:
 
     try:
@@ -1189,18 +1173,34 @@ def execute_source_dq(
                 "source_table cannot be empty."
             )
 
-        if not table_exists(
-            source_table
-        ):
-
+        if not table_exists(source_table):
             raise DQProcessingError(
                 f"Source table does not exist: "
                 f"{source_table}"
             )
 
+        # -------------------------------------------------------------
+        # Read source table
+        # -------------------------------------------------------------
+
         source_df = spark.table(
             source_table
         )
+
+        # -------------------------------------------------------------
+        # Resolve and apply batch filter
+        # -------------------------------------------------------------
+
+        source_df, resolved_batch_id = (
+            filter_to_batch(
+                source_df=source_df,
+                batch_id=batch_id,
+            )
+        )
+
+        # -------------------------------------------------------------
+        # Load DQ rules
+        # -------------------------------------------------------------
 
         rules = get_rules_for_source(
             source_table=source_table,
@@ -1209,12 +1209,15 @@ def execute_source_dq(
         )
 
         if not rules:
-
             raise DQProcessingError(
                 f"No DQ rules found for "
                 f"source_identifier={source_identifier}, "
                 f"source_table={source_table}"
             )
+
+        # -------------------------------------------------------------
+        # Reference dataframe
+        # -------------------------------------------------------------
 
         reference_df = None
 
@@ -1223,7 +1226,6 @@ def execute_source_dq(
             if not table_exists(
                 reference_table
             ):
-
                 raise DQProcessingError(
                     f"Reference table does not exist: "
                     f"{reference_table}"
@@ -1233,13 +1235,25 @@ def execute_source_dq(
                 reference_table
             )
 
+        # -------------------------------------------------------------
+        # Logging
+        # -------------------------------------------------------------
+
+        source_count = source_df.count()
+
         print(
             f"{MODULE_NAME}: "
             f"source_identifier={source_identifier}, "
             f"source_system_name={source_system_name}, "
             f"source_table={source_table}, "
+            f"batch_id={resolved_batch_id}, "
+            f"source_records={source_count}, "
             f"rules={len(rules)}"
         )
+
+        # -------------------------------------------------------------
+        # Execute DQ
+        # -------------------------------------------------------------
 
         return execute_rules(
             source_df=source_df,
@@ -1257,6 +1271,224 @@ def execute_source_dq(
             f"source_identifier={source_identifier}, "
             f"source_table={source_table}: {exc}"
         ) from exc
+
+
+# ---------------------------------------------------------------------
+# Complete DQ pipeline
+# ---------------------------------------------------------------------
+
+def main_data_quality_pipeline(
+    source_identifier: str,
+    source_table: str,
+    source_system_name: Optional[str] = None,
+    reference_table: Optional[str] = None,
+    batch_id: Optional[int] = None,
+) -> Tuple[DataFrame, DataFrame]:
+
+    """
+    Execute DQ and persist audit/rejection results.
+
+    Steps:
+      1. Execute configured DQ rules.
+      2. Write rule-level results to DQ log table.
+      3. Write rejected records to rejection table.
+      4. Mark the batch DQ status as Y.
+    """
+
+    pipeline_start = datetime.now()
+
+    try:
+        passed_df, rejected_df = execute_source_dq(
+            source_identifier=source_identifier,
+            source_table=source_table,
+            source_system_name=source_system_name,
+            reference_table=reference_table,
+            batch_id=batch_id,
+        )
+
+        passed_count = passed_df.count()
+        rejected_count = rejected_df.count()
+
+        if batch_id is None:
+            _, resolved_batch_id = filter_to_batch(
+                source_df=spark.table(source_table),
+                batch_id=None,
+            )
+        else:
+            resolved_batch_id = int(batch_id)
+
+        rules = get_configured_rules_for_source(
+            source_identifier=source_identifier,
+            source_system_name=source_system_name,
+        )
+
+        if not rules:
+            raise DQProcessingError(
+                f"No active configured DQ rules found for "
+                f"source_identifier={source_identifier}"
+            )
+
+        log_rows = []
+
+        for rule in rules:
+            rule_rejected_count = (
+                rejected_df
+                .filter(F.col("DQ_RULE") == rule.rule_name)
+                .count()
+            )
+
+            rule_status = (
+                "PASS"
+                if rule_rejected_count == 0
+                else "FAIL"
+            )
+
+            error_description = (
+                None
+                if rule_rejected_count == 0
+                else rule.rule_description
+            )
+
+            log_rows.append(
+                (
+                    None,
+                    int(resolved_batch_id),
+                    source_identifier,
+                    source_system_name,
+                    source_table,
+                    rule.rule_name,
+                    rule_status,
+                    error_description,
+                    int(rule_rejected_count),
+                    pipeline_start,
+                    datetime.now(),
+                )
+            )
+
+        dq_log_schema = StructType([
+            StructField("run_id", StringType(), True),
+            StructField("batch_id", LongType(), True),
+            StructField("source_identifier", StringType(), True),
+            StructField("source_system_name", StringType(), True),
+            StructField("table_name", StringType(), True),
+            StructField("rule_name", StringType(), True),
+            StructField("rule_status", StringType(), True),
+            StructField("error_description", StringType(), True),
+            StructField("record_count", LongType(), True),
+            StructField("start_time", TimestampType(), True),
+            StructField("end_time", TimestampType(), True),
+        ])
+
+        dq_log_df = spark.createDataFrame(
+            log_rows,
+            schema=dq_log_schema,
+        )
+
+        dq_log_df.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable(dqm_log_tbl)
+
+        if rejected_count > 0:
+
+            if "individualEid" in rejected_df.columns:
+                record_key = F.col(
+                    "individualEid"
+                ).cast("string")
+            else:
+                record_key = F.lit(None).cast("string")
+
+            reject_df = (
+                rejected_df
+                .withColumn(
+                    "run_id",
+                    F.lit(None).cast("string"),
+                )
+                .withColumn(
+                    "batch_id",
+                    F.lit(int(resolved_batch_id)).cast("long"),
+                )
+                .withColumn(
+                    "source_system_name",
+                    F.lit(source_system_name),
+                )
+                .withColumn(
+                    "table_name",
+                    F.lit(source_table),
+                )
+                .withColumn(
+                    "record_key",
+                    record_key,
+                )
+                .withColumn(
+                    "rule_name",
+                    F.col("DQ_RULE").cast("string"),
+                )
+                .withColumn(
+                    "error_description",
+                    F.col("DQ_DESCRIPTION").cast("string"),
+                )
+                .withColumn(
+                    "rejected_at",
+                    F.current_timestamp(),
+                )
+                .select(
+                    "run_id",
+                    "batch_id",
+                    "source_system_name",
+                    "table_name",
+                    "record_key",
+                    "rule_name",
+                    "error_description",
+                    "rejected_at",
+                )
+            )
+
+            reject_df.write \
+                .format("delta") \
+                .mode("append") \
+                .saveAsTable(dqm_reject_tbl)
+
+        if source_system_name is None:
+            raise DQProcessingError(
+                "source_system_name is required to update "
+                "batch log."
+            )
+
+        safe_source_system = source_system_name.replace(
+            "'",
+            "''",
+        )
+
+        spark.sql(
+            f"""
+            UPDATE {batch_log_tbl}
+            SET dq_status = 'Y'
+            WHERE batch_id = {int(resolved_batch_id)}
+              AND source_system_name = '{safe_source_system}'
+            """
+        )
+
+        print(
+            f"{MODULE_NAME}: DQ pipeline completed successfully. "
+            f"source_identifier={source_identifier}, "
+            f"batch_id={resolved_batch_id}, "
+            f"passed={passed_count}, "
+            f"rejected={rejected_count}"
+        )
+
+        return passed_df, rejected_df
+
+    except DQProcessingError:
+        raise
+
+    except Exception as exc:
+        raise DQProcessingError(
+            f"Complete DQ pipeline failed for "
+            f"source_identifier={source_identifier}, "
+            f"source_table={source_table}: {exc}"
+        ) from exc
+
 
 
 # ---------------------------------------------------------------------

@@ -67,8 +67,8 @@ spark.conf.set("spark.sql.session.timeZone", "UTC")
 
 MODULE_NAME = "RAW_SOURCE_READ_DATA"
 RUN_URL = get_notebook_run_url()
-SOURCE_IDENTIFIER = sys.argv[1]
-SOURCE_SYSTEM_NAME = sys.argv[2]
+SOURCE_IDENTIFIER = sys.argv[1] if len(sys.argv) >= 2 else ""
+SOURCE_SYSTEM_NAME = sys.argv[2] if len(sys.argv) >= 3 else ""
 
 TO_LIST, INCLUDE_TABLE_LIST = (
     get_maillist(SOURCE_SYSTEM_NAME)
@@ -157,6 +157,38 @@ def apply_delta_filter(
             ).drop("parsed_ts")
 
     return df
+
+
+def update_raw_ingestion_batch_status(batch_ids, source_system_name):
+    """Mark successfully processed RAW batches as complete."""
+    if not batch_ids:
+        return
+
+    normalized_ids = [
+        int(batch_id)
+        for batch_id in batch_ids
+        if batch_id is not None
+    ]
+    if not normalized_ids:
+        return
+
+    batch_id_condition = ", ".join(str(batch_id) for batch_id in normalized_ids)
+
+    source_system_sql = str(source_system_name).replace("'", "''")
+    spark.sql(
+            f"""
+            UPDATE {batch_log_tbl}
+            SET raw_ingestion_status = 'Y',
+                batch_end_time = COALESCE(batch_end_time, current_timestamp())
+            WHERE source_system_name = '{source_system_sql}'
+              AND batch_id IN ({batch_id_condition})
+            """
+        )
+
+    logger.info(
+        f"RAW ingestion status updated to Y for batch IDs: "
+        f"{normalized_ids}"
+    )
 
 
 def process_daily_batches(
@@ -294,6 +326,11 @@ def process_daily_batches(
             batch_id,
         )
 
+        update_raw_ingestion_batch_status(
+            batch_ids=batch_id,
+            source_system_name=source_system_name,
+        )
+
     except Exception as exc:
         logger.info(
             f"Processing failed for batch {batch_id}. "
@@ -389,9 +426,10 @@ def process_files_from_metadata(
         schema_name = row["raw_table_schema"]
         table_name = row["raw_table_name"]
 
-        target_table_full_name = (
-            f"{catalog}.{schema_name}.{table_name}"
-        )
+        if schema_name and schema_name.count(".") >= 1:
+            target_table_full_name = f"{schema_name}.{table_name}"
+        else:
+            target_table_full_name = f"{catalog}.{schema_name}.{table_name}"
 
         source_load_type = row["source_load_type"]
         archive_flag = row["archive_flag"]
@@ -667,7 +705,7 @@ def process_files_from_metadata(
                     if target_col_upper == "BATCH_ID":
                         expr = (
                             F.col(source_col)
-                            .cast("int")
+                            .cast("long")
                             .alias(target_col)
                         )
 
@@ -772,11 +810,23 @@ def process_files_from_metadata(
                 "Writing data."
             )
 
+            logger.info("Final DataFrame schema before RAW write:")
+            logger.info(df.schema.simpleString())
+
+            logger.info(
+                f"Final BATCH_ID datatype: {df.schema['BATCH_ID'].dataType}"
+            )
+
+            logger.info("Final BATCH_ID values before RAW write:")
+            df.select("BATCH_ID").show(truncate=False)
+
             df.write.format("delta").mode(
                 load_mode
             ).saveAsTable(
                 target_table_full_name
             )
+
+            logger.info("Write complete.")
 
             logger.info("Write complete.")
 
@@ -790,7 +840,7 @@ def process_files_from_metadata(
                     f"""
                     UPDATE {ingestion_config_tbl.rsplit(".", 1)[0]}.ctl_entity_mstr
                     SET full_load_flag = false
-                    WHERE source_identifier = '{source_identifier}'
+                    WHERE source_identifier = '{str(source_identifier).replace("'", "''")}'
                     """
                 )
 

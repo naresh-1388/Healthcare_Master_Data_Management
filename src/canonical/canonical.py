@@ -1149,25 +1149,52 @@ def main_canonical_pipeline():
     # SOURCE TABLES
     # ------------------------------------------------------------------------
 
+    # Resolve configured source tables. In the existing control framework,
+    # the runtime target can correspond to the configured std table. First use
+    # an explicit canonical target match; if that is absent, resolve the
+    # source table through ctl_entity_mstr for the requested source.
+    # Resolve configured source/target pairs.
+    #
+    # The canonical target is resolved from ctl_can_mapg so source and target names remain configuration-driven.
     source_tables = (
         canonical_config_df
         .filter(
-            F.lower(
-                F.trim(
-                    F.col("tgt_tbl_nm")
-                )
-            )
+            F.lower(F.trim(F.col("src_tbl_nm")))
             == target_table_name.strip().lower()
         )
-        .select(
-            "src_tbl_nm"
-        )
+        .select("src_tbl_nm", "tgt_tbl_nm")
         .distinct()
         .collect()
     )
 
     if not source_tables:
+        entity_rows = (
+            spark.table(ingestion_config_tbl)
+            .filter(
+                (F.lower(F.trim(F.col("source_identifier"))) == source_identifier.strip().lower())
+                & (F.lower(F.trim(F.col("source_system_name"))) == source_system_name.strip().lower())
+                & (F.lower(F.trim(F.col("std_table_name"))) == target_table_name.strip().lower())
+                & (F.col("source_active_flag") == True)
+            )
+            .select("std_table_name")
+            .distinct()
+            .collect()
+        )
 
+        if entity_rows:
+            configured_source = entity_rows[0]["std_table_name"]
+            source_tables = (
+                canonical_config_df
+                .filter(
+                    F.lower(F.trim(F.col("src_tbl_nm")))
+                    == configured_source.strip().lower()
+                )
+                .select("src_tbl_nm", "tgt_tbl_nm")
+                .distinct()
+                .collect()
+            )
+
+    if not source_tables:
         raise GracefulExit(
             f"No canonical source tables found for "
             f"target {target_table_name}"
@@ -1181,17 +1208,17 @@ def main_canonical_pipeline():
 
     target_schema = None
 
-    resolved_target_name = (
-        target_table_name
-    )
+    resolved_target_name = None
 
     for row in source_tables:
 
         src_tbl_nm = row["src_tbl_nm"]
+        configured_target_tbl_nm = row["tgt_tbl_nm"]
 
         logger.info(
             f"Processing canonical source table: "
-            f"{src_tbl_nm}"
+            f"{src_tbl_nm} -> target table: "
+            f"{configured_target_tbl_nm}"
         )
 
         try:
@@ -1202,7 +1229,7 @@ def main_canonical_pipeline():
                 resolved_target_name,
             ) = create_canonical_view(
                 src_tbl_nm,
-                target_table_name,
+                configured_target_tbl_nm,
                 canonical_config_df,
                 batch_condition,
                 source_identifier,

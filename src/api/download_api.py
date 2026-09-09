@@ -27,12 +27,11 @@ BACKOFF = 2
 RETRIES = 3
 CONTENT_TYPE = "application/json"
 
-API_KEY = os.environ["api_key"]
-BASE_ORIEO_URL = os.environ["base_ORIEO_url"]  # USER: set your ORIEO base URL here via runtime env/Databricks secret.
-JISB_URL = os.environ["jisb_url"]  # USER: set your JISB API URL here via runtime env/Databricks secret.
-
-REGION_NAME = os.environ["region"]
-SECRET_NAME = os.environ["secret_name"]  # USER: set your AWS Secrets Manager secret name here.
+API_KEY = os.getenv("api_key")
+BASE_ORIEO_URL = os.getenv("base_ORIEO_url")  # Deployment-supplied.
+JISB_URL = os.getenv("jisb_url")  # Deployment-supplied.
+REGION_NAME = os.getenv("region", "us-east-1")
+SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
 
 logger = logging.getLogger("Download_API")
 logger.setLevel(logging.INFO)
@@ -63,12 +62,32 @@ def get_secret(
     return response["SecretBinary"]
 
 
-_SECRET = get_secret(SECRET_NAME)
+def load_runtime_credentials() -> None:
+    """Load runtime API configuration and credentials when the API is invoked.
 
-ORIEO_USERNAME = _SECRET.get("username")
-ORIEO_PASSWORD = _SECRET.get("password")
-JISB_USERNAME = _SECRET.get("jisb_username")
-JISB_PASSWORD = _SECRET.get("jisb_password")
+    Importing this module must not contact AWS Secrets Manager because several
+    pipeline modules import it for shared transformation/handler functions.
+    """
+    global API_KEY, BASE_ORIEO_URL, JISB_URL, REGION_NAME, SECRET_NAME
+    global ORIEO_USERNAME, ORIEO_PASSWORD, JISB_USERNAME, JISB_PASSWORD
+
+    API_KEY = os.getenv("api_key")
+    BASE_ORIEO_URL = os.getenv("base_ORIEO_url")
+    JISB_URL = os.getenv("jisb_url")
+    REGION_NAME = os.getenv("region", "us-east-1")
+    SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
+
+    secret = get_secret(SECRET_NAME, REGION_NAME)
+    ORIEO_USERNAME = secret.get("username")
+    ORIEO_PASSWORD = secret.get("password")
+    JISB_USERNAME = secret.get("jisb_username")
+    JISB_PASSWORD = secret.get("jisb_password")
+
+
+ORIEO_USERNAME: str | None = None
+ORIEO_PASSWORD: str | None = None
+JISB_USERNAME: str | None = None
+JISB_PASSWORD: str | None = None
 
 
 def validate_request_payload(
@@ -1627,6 +1646,7 @@ def lambda_handler(
     context: Any,
 ) -> dict[str, Any]:
     """AWS Lambda entry point for HCP lookup."""
+    load_runtime_credentials()
     logger.info(
         "STARTED getting the details"
     )

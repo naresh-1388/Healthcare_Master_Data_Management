@@ -1,6 +1,6 @@
 """Transform the incoming SBC search payload into a JISB request payload.
 
-Source of truth for the connected SBC flow: ``sbc (1).py``.
+Source of truth for the connected SBC flow: `sbc (1).py`.
 The standalone transformation sample is not used to alter this contract.
 """
 
@@ -14,6 +14,7 @@ MIDDLE_NAME = "hcp.middleName"
 LAST_NAME = "hcp.lastName"
 ADDRESS_COUNTRY_CODE = "address.countryCode"
 
+
 JISB_FIELD_MAPPING = (
     (FIRST_NAME, "individual.firstName", "EXACT", 1),
     (MIDDLE_NAME, "individual.middleName", "Fuzzy", 1),
@@ -24,6 +25,7 @@ JISB_FIELD_MAPPING = (
     ("address.longPostalCode", "address.longPostalCode", "EXACT", 1),
     ("address.type", "address.type", "Fuzzy", 1),
 )
+
 
 COUNTRY_TO_CODBASE = {
     "NL": "WNL",
@@ -37,17 +39,44 @@ class JISBTransformationError(ValueError):
 
 def _values(value: Any) -> list[Any]:
     if isinstance(value, list):
-        return [item for item in value if item is not None and str(item).strip()]
+        return [
+            item
+            for item in value
+            if item is not None and str(item).strip()
+        ]
+
     if value is None or not str(value).strip():
         return []
+
     return [value.strip() if isinstance(value, str) else value]
 
 
-def transform_to_jisb(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
+def _get_nested_value(incoming: Dict[str, Any], path: str) -> Any:
+    """Read a dotted path such as 'address.countryCode' from nested input."""
+    current: Any = incoming
+
+    for part in path.split("."):
+        if not isinstance(current, dict):
+            return None
+
+        current = current.get(part)
+
+        if current is None:
+            return None
+
+    return current
+
+
+def transform_to_jisb(
+    incoming: Dict[str, Any] | None,
+) -> Dict[str, Any]:
     """Build the JISB request payload used by the SBC flow."""
 
     incoming = incoming or {}
-    country = str(incoming.get(ADDRESS_COUNTRY_CODE, "") or "").strip().upper()
+
+    country = str(
+        _get_nested_value(incoming, ADDRESS_COUNTRY_CODE) or ""
+    ).strip().upper()
 
     if not country:
         raise JISBTransformationError(
@@ -55,6 +84,7 @@ def transform_to_jisb(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
         )
 
     cod_base = COUNTRY_TO_CODBASE.get(country)
+
     if not cod_base:
         raise JISBTransformationError(
             f"Unsupported country for jisb codBase mapping: {country}"
@@ -68,7 +98,10 @@ def transform_to_jisb(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
     }
 
     for source, target, method, precision in JISB_FIELD_MAPPING:
-        values = _values(incoming.get(source, ""))
+        values = _values(
+            _get_nested_value(incoming, source)
+        )
+
         if not values:
             continue
 
@@ -91,12 +124,3 @@ __all__ = [
     "JISBTransformationError",
     "transform_to_jisb",
 ]
-
-# ============================================================================
-# USER CONFIGURATION
-# ============================================================================
-# No credentials are required in this transformation module.
-# If the JISB endpoint or authentication is configured elsewhere, update that
-# runtime configuration in the calling API module, not in this mapping file.
-# ============================================================================
-

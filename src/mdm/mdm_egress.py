@@ -1,679 +1,580 @@
 """
-MDM HUB Egress - HCP
+Healthcare MDM - MDM Egress
 
-Source of truth:
-    Data Info.xlsx
-    Sheet: MDM_HUB_Egress-HCP_Master
+Purpose:
+    Publish validated MDM data to downstream consumers.
 
-The workbook defines source MDM attributes and target HUB attributes.
-No additional business transformations are introduced here.
+Pipeline dependency:
+    RAW -> Landing -> Staging -> DQ -> Ingress -> Egress
+
+Egress is allowed only when:
+    raw_ingestion_status = Y
+    stdz_status          = Y
+    canonical_status     = Y
+    dq_status             = Y
+    ingress_status        = Y
+    egress_status        != Y
+
+Purpose:
+    Publish validated MDM records to configured downstream targets.
+
+Target tables are supplied explicitly by the environment configuration.
 """
 
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+
+# ---------------------------------------------------------------------
+# Runtime configuration
+# ---------------------------------------------------------------------
+
 try:
-    from ..core.logging_utils import logger
+    from core import runtime_config
 except ImportError:
-    from core.logging_utils import logger
-
-
-spark = SparkSession.builder.getOrCreate()
-
-
-MODULE_NAME = "MDM_HUB_EGRESS"
-
-
-class GracefulExit(Exception):
-    """Expected pipeline termination."""
-
-
-class EgressProcessingError(Exception):
-    """MDM HUB egress processing error."""
+    runtime_config = None
 
 
 # ---------------------------------------------------------------------
-# Exact mapping from Data Info.xlsx
+# Helpers
 # ---------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class EgressMapping:
-    source_object: str
-    source_attribute: str
-    target_table: str
-    target_attribute: str
+def _require_spark(spark: SparkSession) -> SparkSession:
+    if spark is None:
+        raise ValueError("spark session is required")
+    return spark
 
 
-HCP_EGRESS_MAPPING: List[EgressMapping] = [
-
-    # ================================================================
-    # Specialty
-    # ================================================================
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_SpecialtyType",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Specialty",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_SpecialtyClass",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Specialty_Type",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_SpecialtyRank",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Specialty_Rank",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_taxonomyName",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Taxonomy_Name",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_group",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Group",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_taxonomy_code",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Taxonomy_Code",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_infa360_subClassification",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Sub_Classification",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "X_specialty_status",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Specialty_Status",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_Specialty",
-        "O_Load_Date",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_specialty",
-        "Load_Date",
-    ),
-
-    # ================================================================
-    # Alternate Name
-    # ================================================================
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "alternateNameType",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Name_Type",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "AlternateName",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Alternate_Name",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "X_alternate_name_status",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Alternate_Name_Status",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "effectiveStartDate",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Effective_Start_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "effectiveEndDate",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Effective_End_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.AlternateName",
-        "O_Load_Date",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_alternatename",
-        "Load_Date",
-    ),
-
-    # ================================================================
-    # Therapeutic Area
-    # ================================================================
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_TherapeuticArea",
-        "X_infa360_TherapeuticArea_parentId",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_therapeuticarea",
-        "Global_HCP_ID",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_TherapeuticArea",
-        "X_infa360_activeIndicator",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_therapeuticarea",
-        "Active_Indicator",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_TherapeuticArea",
-        "X_infa360_therapeuticArea",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_therapeuticarea",
-        "Therapeutic_Area",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_TherapeuticArea",
-        "O_Load_Date",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_therapeuticarea",
-        "Load_Date",
-    ),
-
-    # ================================================================
-    # License
-    # ================================================================
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_License_parentId",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Global_HCP_ID",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "sourcePKey",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Source_PK",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_LicenseType",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "License_Type",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_LicenseNumber",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "License_Number",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_country",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Country",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_state",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "State",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_sample_elig",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "License_Sample_Eligibility",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_sampleability_overall",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Sampleability_Overall",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_sampleability_lastreceived_date",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Sampleability_Last_Received_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_sampleability_fed_sanctions_date",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Sampleability_Fed_Sanctions_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_sampleability_desigstatus",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Sampleability_Designation_Status",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_issueDate",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Issue_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_expiryDate",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Expiry_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_degree",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Degree",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_adjLic_expdate",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Adj_License_Exp_Date",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_AdjCode",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Adj_Code",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_AdjCodesDescriptions",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "Adj_Codes_Descriptions",
-    ),
-
-    EgressMapping(
-        "Home/Cust 360/Business Entity/HCP/"
-        "C360person.X_infa360_License",
-        "X_infa360_status",
-        "eda_de_Parexel_mdm_hub/TABLE/"
-        "Par_hub_master_hcp_license",
-        "License_Status",
-    ),
-]
+def _table_exists(spark: SparkSession, table_name: str) -> bool:
+    try:
+        return spark.catalog.tableExists(table_name)
+    except Exception:
+        try:
+            spark.sql(f"DESCRIBE TABLE {table_name}")
+            return True
+        except Exception:
+            return False
 
 
-# ---------------------------------------------------------------------
-# Mapping helpers
-# ---------------------------------------------------------------------
+def _qualify_table(table_name: str, default_schema: str) -> str:
+    """
+    Qualify a table name without changing an already-qualified name.
+    """
+    if not table_name:
+        raise ValueError("table_name cannot be empty")
 
-def mappings_by_source() -> Dict[str, List[EgressMapping]]:
-    result: Dict[str, List[EgressMapping]] = {}
+    table_name = table_name.strip()
 
-    for mapping in HCP_EGRESS_MAPPING:
-        result.setdefault(
-            mapping.source_object,
-            [],
-        ).append(mapping)
+    if table_name.count(".") >= 2:
+        return table_name
 
-    return result
+    if table_name.count(".") == 1:
+        if runtime_config is not None:
+            catalog = getattr(runtime_config, "catalog", None)
+            if catalog:
+                return f"{catalog}.{table_name}"
 
+    if runtime_config is not None:
+        catalog = getattr(runtime_config, "catalog", None)
+        if catalog:
+            return f"{catalog}.{default_schema}.{table_name}"
 
-def mappings_by_target() -> Dict[str, List[EgressMapping]]:
-    result: Dict[str, List[EgressMapping]] = {}
-
-    for mapping in HCP_EGRESS_MAPPING:
-        result.setdefault(
-            mapping.target_table,
-            [],
-        ).append(mapping)
-
-    return result
+    return f"{default_schema}.{table_name}"
 
 
-def resolve_column(
-    df: DataFrame,
-    column_name: str,
-):
-    columns = {
-        column.lower(): column
-        for column in df.columns
-    }
+def _get_batch_filter(
+    source_system_name: str,
+    batch_id: Optional[int] = None
+) -> str:
+    """
+    Return the exact egress gating condition used by the project.
+    """
 
-    actual_name = columns.get(
-        column_name.lower()
-    )
+    source = source_system_name.replace("'", "''")
 
-    if actual_name is None:
-        raise EgressProcessingError(
-            f"MDM source column '{column_name}' "
-            f"does not exist. "
-            f"Available columns: {df.columns}"
+    if batch_id is not None:
+        return (
+            f"source_system_name = '{source}' "
+            f"AND batch_id = {int(batch_id)} "
+            "AND raw_ingestion_status = 'Y' "
+            "AND stdz_status = 'Y' "
+            "AND canonical_status = 'Y' "
+            "AND dq_status = 'Y' "
+            "AND ingress_status = 'Y' "
+            "AND COALESCE(egress_status, 'N') <> 'Y'"
         )
 
-    return F.col(actual_name)
+    return (
+        f"source_system_name = '{source}' "
+        "AND raw_ingestion_status = 'Y' "
+        "AND stdz_status = 'Y' "
+        "AND canonical_status = 'Y' "
+        "AND dq_status = 'Y' "
+        "AND ingress_status = 'Y' "
+        "AND COALESCE(egress_status, 'N') <> 'Y'"
+    )
 
 
-# ---------------------------------------------------------------------
-# Transformation
-# ---------------------------------------------------------------------
-
-def transform_for_target(
-    source_df: DataFrame,
-    mappings: List[EgressMapping],
+def get_pending_batches(
+    spark: SparkSession,
+    source_system_name: str
 ) -> DataFrame:
+    """
+    Return batches eligible for egress.
+    """
 
-    expressions = []
+    _require_spark(spark)
 
-    for mapping in mappings:
+    if runtime_config is None:
+        raise RuntimeError("runtime_config could not be imported")
 
-        expressions.append(
-            resolve_column(
-                source_df,
-                mapping.source_attribute,
-            ).alias(
-                mapping.target_attribute
-            )
-        )
+    batch_log_tbl = runtime_config.batch_log_tbl
 
-    return source_df.select(
-        *expressions
+    condition = _get_batch_filter(source_system_name)
+
+    return (
+        spark.table(batch_log_tbl)
+        .filter(F.expr(condition))
+        .orderBy(F.col("batch_id"))
     )
 
 
 # ---------------------------------------------------------------------
-# Process one MDM source object
+# Source preparation
 # ---------------------------------------------------------------------
 
-def process_source_object(
-    source_object: str,
+def read_ingress_source(
+    spark: SparkSession,
     source_table: str,
-) -> Dict[str, DataFrame]:
+    batch_id: int
+) -> DataFrame:
+    """
+    Read only the required batch from the MDM ingress/publish dataset.
+    """
 
-    mappings = mappings_by_source().get(
-        source_object,
-        [],
-    )
+    _require_spark(spark)
 
-    if not mappings:
-        raise EgressProcessingError(
-            f"No HCP egress mapping found for "
-            f"{source_object}"
+    df = spark.table(source_table)
+
+    if "BATCH_ID" not in {c.upper() for c in df.columns}:
+        raise RuntimeError(
+            f"Required BATCH_ID column not found in source table: "
+            f"{source_table}"
         )
 
-    source_df = spark.table(
-        source_table
-    )
+    return df.filter(F.col("BATCH_ID") == int(batch_id))
 
-    output: Dict[str, DataFrame] = {}
 
-    target_groups: Dict[
-        str,
-        List[EgressMapping]
-    ] = {}
+def prepare_egress_dataframe(
+    df: DataFrame,
+    source_system_name: str,
+    batch_id: int
+) -> DataFrame:
+    """
+    Prepare the outbound dataset.
 
-    for mapping in mappings:
-        target_groups.setdefault(
-            mapping.target_table,
-            [],
-        ).append(mapping)
+    No business transformation is introduced here.
+    Existing validated values are preserved.
 
-    for target_table, target_mappings in target_groups.items():
+    Technical metadata is added only when not already present.
+    """
 
-        output[target_table] = transform_for_target(
-            source_df,
-            target_mappings,
+    if df is None:
+        raise ValueError("Input dataframe cannot be None")
+
+    result = df
+
+    existing_upper = {c.upper() for c in result.columns}
+
+    if "SOURCE_SYSTEM_NAME" not in existing_upper:
+        result = result.withColumn(
+            "SOURCE_SYSTEM_NAME",
+            F.lit(source_system_name)
         )
 
-    return output
+    if "BATCH_ID" not in existing_upper:
+        result = result.withColumn(
+            "BATCH_ID",
+            F.lit(int(batch_id)).cast("long")
+        )
+
+    if "EGRESS_LOAD_DATE" not in existing_upper:
+        result = result.withColumn(
+            "EGRESS_LOAD_DATE",
+            F.current_timestamp()
+        )
+
+    return result
 
 
 # ---------------------------------------------------------------------
-# Write target HUB table
+# Target writing
 # ---------------------------------------------------------------------
 
-def write_target(
+def write_egress(
+    spark: SparkSession,
     df: DataFrame,
     target_table: str,
+    mode: str = "append"
 ) -> int:
+    """
+    Write prepared egress records.
 
-    record_count = df.count()
+    The caller must provide the approved physical target table.
+    """
 
-    if record_count == 0:
+    if df is None:
+        raise ValueError("Egress dataframe cannot be None")
+
+    if not target_table:
+        raise ValueError(
+            "Physical egress target table is required"
+        )
+
+    if mode not in {"append", "overwrite"}:
+        raise ValueError(
+            f"Unsupported write mode: {mode}"
+        )
+
+    count = df.count()
+
+    if count == 0:
+        print(
+            f"Egress source is empty. Nothing written to {target_table}"
+        )
         return 0
+
+    # Egress must publish into an already-approved physical target.
+    # Do not silently mutate its schema.
+    if not _table_exists(spark, target_table):
+        raise RuntimeError(
+            f"Approved physical egress target table does not exist: "
+            f"{target_table}"
+        )
 
     (
         df.write
-        .mode("append")
-        .option(
-            "mergeSchema",
-            "true",
-        )
-        .saveAsTable(
-            target_table
-        )
+        .format("delta")
+        .mode(mode)
+        .saveAsTable(target_table)
     )
 
-    logger.info(
-        f"Loaded {record_count} records "
-        f"into {target_table}"
+    print(
+        f"Egress write complete: {count} records -> {target_table}"
     )
 
-    return record_count
+    return count
 
 
 # ---------------------------------------------------------------------
-# Main HCP egress process
+# Batch status
 # ---------------------------------------------------------------------
 
-def process_hcp_egress(
-    source_table_map: Dict[str, str],
-    target_table_map: Dict[str, str],
-) -> int:
+def update_egress_status(
+    spark: SparkSession,
+    source_system_name: str,
+    batch_id: int
+) -> None:
+    """
+    Mark the successfully published batch as Egress = Y.
+    """
 
-    total_records = 0
+    _require_spark(spark)
 
-    source_groups = mappings_by_source()
+    if runtime_config is None:
+        raise RuntimeError("runtime_config could not be imported")
 
-    for source_object, mappings in source_groups.items():
+    batch_log_tbl = runtime_config.batch_log_tbl
 
-        if source_object not in source_table_map:
-            raise EgressProcessingError(
-                f"Physical source table is not configured "
-                f"for MDM object: {source_object}"
+    source = source_system_name.replace("'", "''")
+
+    spark.sql(
+        f"""
+        UPDATE {batch_log_tbl}
+        SET egress_status = 'Y',
+            batch_end_time = COALESCE(batch_end_time, current_timestamp())
+        WHERE source_system_name = '{source}'
+          AND batch_id = {int(batch_id)}
+          AND raw_ingestion_status = 'Y'
+          AND stdz_status = 'Y'
+          AND canonical_status = 'Y'
+          AND dq_status = 'Y'
+          AND ingress_status = 'Y'
+        """
+    )
+
+    print(
+        f"Egress status updated: "
+        f"source={source_system_name}, batch={batch_id}"
+    )
+
+
+# ---------------------------------------------------------------------
+# Main batch processor
+# ---------------------------------------------------------------------
+
+def process_egress_batch(
+    spark: SparkSession,
+    source_system_name: str,
+    batch_id: int,
+    source_table: str,
+    target_table: str,
+    write_mode: str = "append"
+) -> Dict[str, object]:
+    """
+    Process one eligible egress batch.
+    """
+
+    _require_spark(spark)
+
+    if not source_table:
+        raise ValueError("source_table is required")
+
+    if not target_table:
+        raise ValueError(
+            "target_table is required. "
+            "Do not run egress without an approved target."
+        )
+
+    print("=" * 80)
+    print("MDM EGRESS")
+    print("=" * 80)
+    print(f"Source System : {source_system_name}")
+    print(f"Batch ID      : {batch_id}")
+    print(f"Source Table  : {source_table}")
+    print(f"Target Table  : {target_table}")
+
+    # -------------------------------------------------------------
+    # Validate batch gating
+    # -------------------------------------------------------------
+
+    if runtime_config is None:
+        raise RuntimeError("runtime_config could not be imported")
+
+    batch_log_tbl = runtime_config.batch_log_tbl
+
+    status_df = (
+        spark.table(batch_log_tbl)
+        .filter(
+            (F.col("source_system_name") == source_system_name)
+            & (F.col("batch_id") == int(batch_id))
+        )
+        .select(
+            "batch_id",
+            "source_system_name",
+            "raw_ingestion_status",
+            "stdz_status",
+            "canonical_status",
+            "dq_status",
+            "ingress_status",
+            "egress_status"
+        )
+    )
+
+    status = status_df.first()
+
+    if status is None:
+        raise RuntimeError(
+            f"No batch-log record found for "
+            f"{source_system_name}/{batch_id}"
+        )
+
+    required_statuses = {
+        "raw_ingestion_status": "Y",
+        "stdz_status": "Y",
+        "canonical_status": "Y",
+        "dq_status": "Y",
+        "ingress_status": "Y",
+    }
+
+    for column_name, expected in required_statuses.items():
+        actual = status[column_name]
+
+        if actual != expected:
+            raise RuntimeError(
+                f"Egress gating failed: "
+                f"{column_name}={actual}, expected={expected}"
             )
 
-        source_table = source_table_map[
-            source_object
-        ]
-
-        logger.info(
-            f"Processing MDM source object: "
-            f"{source_object}"
+    if status["egress_status"] == "Y":
+        raise RuntimeError(
+            f"Batch {batch_id} is already marked as Egress complete"
         )
 
-        target_data = process_source_object(
-            source_object,
-            source_table,
-        )
+    print("Batch gating: PASS")
 
-        for target_object, dataframe in target_data.items():
+    # -------------------------------------------------------------
+    # Read
+    # -------------------------------------------------------------
 
-            if target_object not in target_table_map:
-                raise EgressProcessingError(
-                    f"Physical HUB target table is not "
-                    f"configured for: {target_object}"
-                )
-
-            physical_target = target_table_map[
-                target_object
-            ]
-
-            total_records += write_target(
-                dataframe,
-                physical_target,
-            )
-
-    return total_records
-
-
-# ---------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------
-
-def main() -> None:
-
-    logger.info(
-        "Starting HCP MDM HUB egress."
+    source_df = read_ingress_source(
+        spark=spark,
+        source_table=source_table,
+        batch_id=batch_id
     )
 
-    # Physical source/target table names are intentionally not
-    # fabricated here because the Excel egress sheet supplies
-    # Informatica object paths, not physical runtime table names.
-    #
-    # Populate these from the project's runtime/configuration source.
+    source_count = source_df.count()
 
-    source_table_map: Dict[str, str] = {}
+    print(f"Source records: {source_count}")
 
-    target_table_map: Dict[str, str] = {}
+    # -------------------------------------------------------------
+    # Prepare
+    # -------------------------------------------------------------
 
-    try:
+    egress_df = prepare_egress_dataframe(
+        df=source_df,
+        source_system_name=source_system_name,
+        batch_id=batch_id
+    )
 
-        total = process_hcp_egress(
-            source_table_map=source_table_map,
-            target_table_map=target_table_map,
+    # -------------------------------------------------------------
+    # Write
+    # -------------------------------------------------------------
+
+    written_count = write_egress(
+        spark=spark,
+        df=egress_df,
+        target_table=target_table,
+        mode=write_mode
+    )
+
+    # -------------------------------------------------------------
+    # Reconciliation
+    # -------------------------------------------------------------
+
+    if source_count != written_count:
+        raise RuntimeError(
+            f"Egress reconciliation failed: "
+            f"source={source_count}, written={written_count}"
         )
 
-        logger.info(
-            f"HCP MDM HUB egress completed. "
-            f"Total records: {total}"
+    print(
+        f"Egress reconciliation: PASS "
+        f"(source={source_count}, written={written_count})"
+    )
+
+    # -------------------------------------------------------------
+    # Status update ONLY after successful write + reconciliation
+    # -------------------------------------------------------------
+
+    update_egress_status(
+        spark=spark,
+        source_system_name=source_system_name,
+        batch_id=batch_id
+    )
+
+    print("=" * 80)
+    print("MDM EGRESS COMPLETE")
+    print("=" * 80)
+
+    return {
+        "source_system_name": source_system_name,
+        "batch_id": int(batch_id),
+        "source_records": source_count,
+        "written_records": written_count,
+        "status": "SUCCESS",
+    }
+
+
+# ---------------------------------------------------------------------
+# Find eligible batches
+# ---------------------------------------------------------------------
+
+def get_latest_eligible_batch(
+    spark: SparkSession,
+    source_system_name: str
+) -> Optional[int]:
+    """
+    Return the latest batch eligible for egress.
+    """
+
+    df = get_pending_batches(
+        spark=spark,
+        source_system_name=source_system_name
+    )
+
+    row = df.orderBy(F.col("batch_id").desc()).first()
+
+    if row is None:
+        return None
+
+    return int(row["batch_id"])
+
+
+# ---------------------------------------------------------------------
+# Public pipeline entry point
+# ---------------------------------------------------------------------
+
+def main_pipeline(
+    spark: SparkSession,
+    source_system_name: str,
+    source_table: str,
+    target_table: str,
+    batch_id: Optional[int] = None,
+    write_mode: str = "append"
+) -> Dict[str, object]:
+    """
+    Main Egress entry point.
+
+    If batch_id is not supplied, the latest eligible batch is selected.
+    """
+
+    _require_spark(spark)
+
+    if batch_id is None:
+        batch_id = get_latest_eligible_batch(
+            spark=spark,
+            source_system_name=source_system_name
         )
 
-    except GracefulExit as exc:
+        if batch_id is None:
+            return {
+                "source_system_name": source_system_name,
+                "status": "NO_ELIGIBLE_BATCH",
+                "source_records": 0,
+                "written_records": 0,
+            }
 
-        logger.info(str(exc))
-
-    except Exception as exc:
-
-        logger.exception(
-            "HCP MDM HUB egress failed."
-        )
-
-        raise EgressProcessingError(
-            "HCP MDM HUB egress processing failed."
-        ) from exc
+    return process_egress_batch(
+        spark=spark,
+        source_system_name=source_system_name,
+        batch_id=batch_id,
+        source_table=source_table,
+        target_table=target_table,
+        write_mode=write_mode
+    )
 
 
-if __name__ == "__main__":
-    main()
+# ---------------------------------------------------------------------
+# Module smoke test
+# ---------------------------------------------------------------------
 
-# ============================================================================
-# USER CONFIGURATION - MDM / SNOWFLAKE
-# ============================================================================
-# 1) Configure physical Snowflake source/target database/schema/table names only
-#    where the project specification supplies or you explicitly provide them.
-# 2) The MDM object paths in Data Info.xlsx are logical target paths; do not
-#    replace them with invented physical table names.
-# 3) Informatica MDM credentials/endpoints belong in the runtime secret store.
-# ============================================================================
+def smoke_test() -> bool:
+    """
+    Import-level smoke test.
+    Does not execute a live egress.
+    """
 
+    required_functions = [
+        "get_pending_batches",
+        "read_ingress_source",
+        "prepare_egress_dataframe",
+        "write_egress",
+        "update_egress_status",
+        "process_egress_batch",
+        "get_latest_eligible_batch",
+        "main_pipeline",
+    ]
+
+    for function_name in required_functions:
+        if not callable(globals().get(function_name)):
+            raise RuntimeError(
+                f"Missing required function: {function_name}"
+            )
+
+    print("mdm_egress module smoke test: PASS")
+    return True
