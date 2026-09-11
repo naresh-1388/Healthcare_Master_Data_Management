@@ -1,5 +1,5 @@
 """
-Transform JISB API response into the project response structure.
+Transform IQVIA API response into the project response structure.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def process_jisb_response(response_json: dict[str, Any]) -> dict[str, Any]:
+def process_iqvia_response(response_json: dict[str, Any]) -> dict[str, Any]:
     """
-    Process the JISB API response.
+    Process the IQVIA API response.
 
     Source response structure:
         response.results[]
@@ -148,13 +148,13 @@ def process_jisb_response(response_json: dict[str, Any]) -> dict[str, Any]:
         }
 
     except Exception:
-        logger.exception("Error processing JISB response")
+        logger.exception("Error processing IQVIA response")
         raise
 
 # ============================================================================
 # USER CONFIGURATION
 # ============================================================================
 # No credentials, database names, schemas, or paths belong in this parser.
-# It only transforms the JISB response structure supplied by the caller.
+# It only transforms the IQVIA response structure supplied by the caller.
 # ============================================================================
 

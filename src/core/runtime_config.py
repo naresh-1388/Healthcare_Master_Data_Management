@@ -1,3 +1,37 @@
+"""
+Runtime configuration module for the Healthcare MDM pipeline.
+
+This module is imported by every pipeline stage (ingestion, standardization,
+canonical, data quality, MDM ingress/egress) and is responsible for:
+
+  1. Detecting which environment the code is running in (dev / test / prod)
+     by inspecting the Databricks workspace URL, and resolving the correct
+     Unity Catalog name, S3 bucket, and alert-mail recipient group for that
+     environment.
+  2. Building the fully-qualified schema names for every layer of the
+     medallion architecture (raw, landing, staging, mdm/publish, util) so
+     that no other module has to hard-code a catalog or schema name.
+  3. Building the fully-qualified names of the utility/control tables that
+     drive the pipeline (batch control table, standardization/canonical/DQ
+     rule master tables, execution log tables, mailing-list master table).
+  4. Capturing the current Databricks job/run/cluster/task IDs so that log
+     entries and email alerts can link back to the exact job run that
+     produced them.
+  5. Providing small helper functions used across the pipeline:
+       - get_notebook_run_url(): builds a clickable link to the current job run.
+       - get_batch_status_filter(): builds the SQL WHERE clause used to pick
+         up only the batches that are eligible for a given pipeline stage,
+         based on the upstream stage's completion status.
+       - update_batch_log_tbl(): marks a batch as complete/failed for a
+         given pipeline stage in the control table.
+       - get_maillist(): looks up the alert email addresses and the list of
+         monitored tables for a given source system.
+
+Every value here is resolved once, at import time, so downstream modules
+simply do ``from core.runtime_config import catalog, raw_schema, ...``
+instead of re-deriving the environment on every call.
+"""
+
 from pyspark.sql import SparkSession
 import os
 import re
@@ -30,6 +64,34 @@ archive_path = os.getenv("HEALTHCARE_MDM_ARCHIVE_PATH")
 # ============================================================
 
 def detect_environment(spark_session: SparkSession):
+    """
+    Work out which environment (test / prod / dev) the current Databricks
+    workspace belongs to, purely from the workspace URL, and return the
+    environment-specific settings that the rest of the pipeline needs.
+
+    Args:
+        spark_session: The active SparkSession. When it is falsy (e.g. when
+            running outside Databricks, such as in a local unit test), the
+            function falls back to a synthetic "local_dev_workspace" URL so
+            that it always resolves to the DEV environment instead of
+            raising an error.
+
+    Returns:
+        A 4-tuple of:
+          - local_catalog (str): the Unity Catalog name for this environment
+            (e.g. "HMDM_DEV", "HMDM_TST", "HMDM_PROD").
+          - local_env (str): short environment code ("dev", "tst", "prd").
+          - local_mail_recipient (str): which recipient group in the mailing
+            list master table should receive alerts for this environment.
+          - local_s3_bucket (str): the S3 bucket used for archiving raw
+            source files in this environment.
+
+    Raises:
+        ValueError: if the workspace URL does not match any known
+            test/prod/dev naming pattern, since running with an unknown
+            catalog/bucket would risk reading or writing the wrong
+            environment's data.
+    """
     local_catalog = None
     local_env = None
     local_mail_recipient = None
@@ -296,6 +358,32 @@ def get_notebook_run_url():
 # ============================================================
 
 def get_batch_status_filter(module, source_system_name):
+    """
+    Build the SQL WHERE-clause fragment that selects the batches which are
+    ready to be picked up by a given pipeline stage.
+
+    The pipeline is a strict sequence of stages
+    (raw_ingestion -> stdz -> canonical -> dq -> ingress -> egress), and each
+    stage should only process a batch once every stage before it has already
+    completed successfully (status = 'Y') AND this stage itself has not
+    already completed for that batch. This function encodes that
+    dependency chain so every module asks the control table the same way.
+
+    Args:
+        module: Name of the pipeline stage requesting work, e.g.
+            "rawingestion", "stdz", "canonical", "dq", "ingress", "egress"
+            (case-insensitive).
+        source_system_name: The source system to filter on (e.g. "IQVIA").
+
+    Returns:
+        str: A SQL boolean expression suitable for use in a WHERE clause
+        against the batch control table.
+
+    Raises:
+        ValueError: if an unrecognised module name is passed in, since
+            silently returning no filter could cause a stage to
+            accidentally reprocess every batch.
+    """
     if (
         module.lower() == "rawingestion"
         or module.lower() == "raw_ingestion"
@@ -437,6 +525,22 @@ def update_batch_log_tbl(column, value, batch_id=None, source=None):
 # ============================================================
 
 def get_maillist(source_name):
+    """
+    Look up the alert-email distribution list and the list of tables that
+    should be actively monitored for a given source system, for the current
+    environment's recipient group (dev / test / ops).
+
+    Args:
+        source_name: The source system name to look up (e.g. "IQVIA").
+
+    Returns:
+        tuple[list[str], list[str]]:
+          - The list of email addresses to notify (falls back to
+            DEFAULT_ALERT_EMAILS if no active row is found or the source
+            system is not configured).
+          - The list of table names configured for monitoring for this
+            source system (empty list if none configured).
+    """
     email_ids_df = spark.sql(
         f"""
         SELECT

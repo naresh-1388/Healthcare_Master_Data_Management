@@ -1,3 +1,44 @@
+"""
+Healthcare MDM - Data Quality (Land_to_Stage) engine.
+
+This module implements the "Land_to_Stage" pipeline stage: it takes the
+already-standardized LANDING-layer Delta tables and applies the project's
+configured Data Quality (DQ) rules before writing the surviving records to
+the STAGING layer. This is the exact stage documented as "Land_to_Stag" in
+the HMDM_DEV mapping workbook - every DQ_RULES entry below corresponds to
+one row of that sheet (source table, rule name/description, the column the
+rule is evaluated on, and the STAGING target table).
+
+Rule types implemented:
+    - null_check:                      reject rows where a given column is NULL.
+    - name_address_completeness_check: reject a name-table row unless a
+                                        matching, complete address row
+                                        exists for the same source_id.
+    - address_mdr_check:               reject an address row unless the
+                                        parent name record exists AND the
+                                        address itself is non-blank
+                                        ("MDR" = Mandatory Data Requirement).
+    - mdr_check / affiliation_mdr_check / hierarchy_mdr_check:
+                                        reject a child-table row (email,
+                                        phone, specialty, tax, affiliation,
+                                        hierarchy, etc.) unless its foreign
+                                        key exists in the corresponding
+                                        parent/name table.
+
+High-level flow (see main_data_quality_pipeline / execute_source_dq):
+    1. Look up which DQ rules apply to a source system (either from the
+       DQ_RULES constant below, or from the ctl_dq_entity_mstr control
+       table when one is configured for the environment).
+    2. For each rule, read the relevant LANDING table(s), apply the rule's
+       filtering logic, and write the passing rows to the STAGING table.
+    3. Rejected rows are written to the DQ reject table (dqm_reject_tbl)
+       together with the rule that rejected them, for audit and reprocessing.
+    4. Every rule execution and the overall batch outcome are logged to the
+       DQ log table (dqm_log_tbl) and the shared pipeline log table
+       (log_tbl_nm), and the batch control table is updated so the next
+       pipeline stage (MDM ingress) knows this batch's DQ step is complete.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -73,6 +114,22 @@ class DQProcessingError(Exception):
 
 @dataclass(frozen=True)
 class DQRule:
+    """
+    One configured Data Quality rule, corresponding to a single row of the
+    Land_to_Stag sheet in the HMDM_DEV mapping workbook.
+
+    Attributes:
+        source_table: LANDING-layer table the rule reads from (e.g. "hcp_name").
+        rule_name: Name of the rule implementation to apply - must match one
+            of the rule functions dispatched in apply_rule() (e.g.
+            "null_check", "mdr_check", "address_mdr_check").
+        rule_description: Human-readable explanation of what the rule
+            rejects, used for logging and for the reject-table audit trail.
+        dq_application_column: The specific column the rule is evaluated
+            against (e.g. the column that must not be NULL, or the foreign
+            key column that must exist in the parent table).
+        target_table: STAGING-layer table that passing rows are written to.
+    """
     source_table: str
     rule_name: str
     rule_description: str
@@ -86,7 +143,11 @@ class DQRule:
 
 DQ_RULES: List[DQRule] = [
     DQRule(
-        "hcp_name",
+        # BUGFIX: source_table was incorrectly "hcp_name" even though the
+        # rule's column ("hco_name") and target_table are both HCO-side.
+        # This mirrored the same copy-paste error found and corrected in
+        # the Land_to_Stag sheet of the HMDM_DEV mapping workbook.
+        "hco_name",
         "null_check",
         "Reject records if the value of the column is Null",
         "hco_name",
@@ -242,14 +303,18 @@ DQ_RULES: List[DQRule] = [
     DQRule(
         "hcp_tendencies",
         "mdr_check",
-        "Reject records if the value of the source_fk is not present in phone table",
+        # BUGFIX: description previously said "phone table" (copy-paste
+        # from the HCP_PHONE rule above) instead of "tendencies table".
+        "Reject records if the value of the source_fk is not present in tendencies table",
         "source_fk",
         "hcp_tendencies",
     ),
     DQRule(
         "hcp_language",
         "mdr_check",
-        "Reject records if the value of the source_fk is not present in phone table",
+        # BUGFIX: description previously said "phone table" (copy-paste
+        # from the HCP_PHONE rule above) instead of "language table".
+        "Reject records if the value of the source_fk is not present in language table",
         "source_fk",
         "hcp_language",
     ),
@@ -264,6 +329,24 @@ def qualified(
     table_name: str,
     catalog_name: Optional[str] = None,
 ) -> str:
+    """
+    Ensure a table name is fully qualified with the current Unity Catalog
+    name, without double-prefixing a name that is already qualified.
+
+    Args:
+        table_name: The table name to qualify, e.g. "staging.hcp_name" or
+            an already-qualified "HMDM_DEV.staging.hcp_name".
+        catalog_name: The catalog to prefix with (typically the
+            environment's `catalog` value from runtime_config). If None,
+            the table name is returned unchanged.
+
+    Returns:
+        str: The fully-qualified table name.
+
+    Raises:
+        DQProcessingError: if table_name is empty, since every DQ operation
+            needs a concrete table to read from or write to.
+    """
 
     if not table_name:
         raise DQProcessingError(
@@ -417,6 +500,18 @@ def apply_null_check(
     df: DataFrame,
     column_name: str,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Implements the "null_check" DQ rule: split a dataframe into rows that
+    pass (the target column is non-null and non-blank) and rows that fail.
+
+    Args:
+        df: The LANDING-layer dataframe to check.
+        column_name: Name of the column that must not be null/blank
+            (resolved case-insensitively).
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows).
+    """
 
     column = resolve_column(
         df,
@@ -443,6 +538,26 @@ def apply_name_address_completeness_check(
     address_df: DataFrame,
     key_column: str,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Implements the "name_address_completeness_check" DQ rule: a name-table
+    row (HCP_NAME or HCO_NAME) only passes if there is at least one
+    non-blank address row for the same key in the corresponding address
+    table. This prevents HCPs/HCOs with no usable address from being
+    mastered downstream.
+
+    Args:
+        name_df: The LANDING-layer name dataframe (e.g. hcp_name/hco_name).
+        address_df: The LANDING-layer address dataframe for the same
+            entity (e.g. hcp_address/hco_address).
+        key_column: The join key present in both dataframes (typically
+            "source_id"/"source_fk") used to match a name row to its
+            address row(s).
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows), both
+        with the original name_df schema (the temporary join helper
+        columns are dropped before returning).
+    """
 
     name_key = resolve_column(
         name_df,
@@ -511,6 +626,29 @@ def apply_address_mdr_check(
     name_df: DataFrame,
     source_fk_column: str,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Implements the "address_mdr_check" DQ rule: an address row only passes
+    if (a) its own address value is non-blank AND (b) its foreign key
+    exists among the parent name table's keys. Rejects orphaned addresses
+    and addresses that point to a name record that does not exist.
+
+    Args:
+        address_df: The LANDING-layer address dataframe (e.g. hcp_address).
+        name_df: The LANDING-layer name dataframe used to validate the
+            foreign key (e.g. hcp_name). The parent key column is detected
+            automatically by checking, in order: Source_ID, Source_FK,
+            Third_Party_ID, individualEid, individualId.
+        source_fk_column: The foreign-key column on address_df that should
+            match a key in name_df.
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows), with the
+        original address_df schema.
+
+    Raises:
+        DQProcessingError: if none of the expected parent-key candidate
+            columns are present on name_df.
+    """
 
     address_fk = resolve_column(
         address_df,
@@ -607,6 +745,31 @@ def apply_mdr_check(
     parent_df: DataFrame,
     source_fk_column: str,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Implements the generic "mdr_check" DQ rule used by every HCP/HCO child
+    table (email, phone, specialty, tax, education, alternate name,
+    identification, origin university, tendencies, language, etc.): a
+    child-table row only passes if its foreign key exists in the parent
+    name table. This is the workhorse rule referenced by most entries in
+    DQ_RULES.
+
+    Args:
+        child_df: The LANDING-layer child dataframe (e.g. hcp_specialty).
+        parent_df: The LANDING-layer parent/name dataframe used to
+            validate the foreign key. The parent key column is detected
+            automatically by checking, in order: Source_ID, Source_FK,
+            Third_Party_ID, individualEid, individualId.
+        source_fk_column: The foreign-key column on child_df that should
+            match a key in parent_df.
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows), with the
+        original child_df schema.
+
+    Raises:
+        DQProcessingError: if none of the expected parent-key candidate
+            columns are present on parent_df.
+    """
 
     child_fk = resolve_column(
         child_df,
@@ -702,7 +865,12 @@ def apply_affiliation_mdr_check(
     name_df: DataFrame,
     source_id_column: str,
 ) -> Tuple[DataFrame, DataFrame]:
-
+    """
+    Implements the "affiliation_mdr_check" DQ rule for HCP_HCO_AFFILIATION:
+    an affiliation row only passes if its source_id exists in the HCP name
+    table. Thin wrapper around apply_mdr_check() kept as its own named rule
+    so it can be referenced directly from DQ_RULES / the control table.
+    """
     return apply_mdr_check(
         affiliation_df,
         name_df,
@@ -719,7 +887,13 @@ def apply_hierarchy_mdr_check(
     name_df: DataFrame,
     source_id_column: str,
 ) -> Tuple[DataFrame, DataFrame]:
-
+    """
+    Implements the "hierarchy_mdr_check" DQ rule for HCO_HCO_HIERARCHY: a
+    parent/child hierarchy row only passes if its source_id exists in the
+    HCO name table. Thin wrapper around apply_mdr_check() kept as its own
+    named rule so it can be referenced directly from DQ_RULES / the control
+    table.
+    """
     return apply_mdr_check(
         hierarchy_df,
         name_df,
@@ -736,6 +910,27 @@ def apply_rule(
     source_df: DataFrame,
     reference_df: Optional[DataFrame] = None,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Dispatch a DQRule to the correct rule-implementation function based on
+    its rule_name, and run it. This is the single entry point every caller
+    (run_single_rule / execute_source_dq) uses instead of calling the
+    apply_*_check functions directly.
+
+    Args:
+        rule: The DQRule to execute.
+        source_df: The LANDING-layer dataframe the rule is evaluated against.
+        reference_df: The parent/reference dataframe required by every rule
+            type except "null_check" (e.g. the name table for mdr_check,
+            the address table for name_address_completeness_check).
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows).
+
+    Raises:
+        DQProcessingError: if rule is None, if a required reference_df is
+            missing, or if rule.rule_name does not match any implemented
+            rule type.
+    """
 
     if rule is None:
         raise DQProcessingError(
@@ -835,6 +1030,22 @@ def add_dq_metadata(
     rule: DQRule,
     status: str,
 ) -> DataFrame:
+    """
+    Stamp a dataframe with audit columns describing which DQ rule produced
+    it and whether the rows passed or were rejected. Used to enrich both
+    the passed-rows dataframe (written to STAGING) and the rejected-rows
+    dataframe (written to the DQ reject table).
+
+    Args:
+        df: The dataframe to stamp (either the passed or rejected half of
+            a rule's output).
+        rule: The DQRule that was evaluated.
+        status: "PASS" or "REJECT".
+
+    Returns:
+        DataFrame: the input dataframe with DQ_RULE, DQ_STATUS,
+        DQ_DESCRIPTION, DQ_APPL_COLUMN and DQ_PROCESSED_AT columns added.
+    """
 
     return (
         df
@@ -872,6 +1083,23 @@ def run_single_rule(
     source_df: DataFrame,
     reference_df: Optional[DataFrame] = None,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Run one DQRule end-to-end: apply the rule logic via apply_rule(), then
+    stamp both the passed and rejected outputs with DQ audit metadata
+    (add_dq_metadata) so downstream writers know which rule produced each
+    row and what the outcome was.
+
+    Args:
+        rule: The DQRule to execute.
+        source_df: The LANDING-layer dataframe to check.
+        reference_df: The parent/reference dataframe required by most rule
+            types (see apply_rule for details).
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_rows, rejected_rows), each
+        with DQ_RULE/DQ_STATUS/DQ_DESCRIPTION/DQ_APPL_COLUMN/
+        DQ_PROCESSED_AT columns added.
+    """
 
     passed, rejected = apply_rule(
         rule=rule,
@@ -899,6 +1127,23 @@ def run_single_rule(
 # ---------------------------------------------------------------------
 
 def _control_row_to_rule(row) -> DQRule:
+    """
+    Convert one row of the ctl_dq_entity_mstr control table into a DQRule
+    instance, so environments that manage DQ rules in the control table
+    (rather than the hard-coded DQ_RULES list) can be dispatched through
+    exactly the same apply_rule() logic.
+
+    Args:
+        row: A Spark Row from ctl_dq_entity_mstr with columns table_name,
+            rule_name, rule_type, rule_description, rule_expression,
+            column_name.
+
+    Returns:
+        DQRule: constructed using rule_type as the dispatch key (falling
+        back to rule_name only when rule_type is blank), and falling back
+        to rule_expression or a generic message when rule_description is
+        blank.
+    """
 
     source_table = row["table_name"]
 
@@ -940,6 +1185,29 @@ def get_configured_rules_for_source(
     source_identifier: str,
     source_system_name: Optional[str] = None,
 ) -> List[DQRule]:
+    """
+    Load the active, configured DQ rules for a source from the
+    ctl_dq_entity_mstr control table (used in environments where DQ rules
+    are managed centrally rather than hard-coded in DQ_RULES).
+
+    Args:
+        source_identifier: The source configuration identifier to filter
+            on. If falsy, an empty list is returned immediately (no
+            control-table lookup performed).
+        source_system_name: Optional additional filter on source system
+            name, for sources with multiple identifiers.
+
+    Returns:
+        list[DQRule]: the matching rules, restricted to rows where
+        rule_status = 'ACTIVE' and active_flag = true, ordered by
+        execution_order. Returns an empty list if the control table does
+        not exist in this environment (falling back to DQ_RULES is the
+        caller's responsibility - see get_rules_for_source).
+
+    Raises:
+        DQProcessingError: if the control table exists but is missing one
+            of the columns this function depends on.
+    """
 
     if not source_identifier:
         return []
@@ -1041,6 +1309,7 @@ def get_configured_rules_for_source(
 # ---------------------------------------------------------------------
 
 def get_rules() -> List[DQRule]:
+    """Return a copy of the full hard-coded DQ_RULES list (all entities)."""
     return list(DQ_RULES)
 
 
@@ -1049,6 +1318,25 @@ def get_rules_for_source(
     source_system_name: Optional[str] = None,
     source_identifier: Optional[str] = None,
 ) -> List[DQRule]:
+    """
+    Resolve the list of DQ rules that apply to one source_table, preferring
+    control-table configuration (get_configured_rules_for_source) when a
+    source_identifier is supplied and the control table has matching
+    active rules, and otherwise falling back to the hard-coded DQ_RULES
+    list filtered by source_table name.
+
+    Args:
+        source_table: The LANDING-layer table name to get rules for (e.g.
+            "hcp_name"), matched case-insensitively against DQ_RULES.
+        source_system_name: Optional filter passed through to the
+            control-table lookup.
+        source_identifier: Optional source configuration identifier; when
+            provided, the control table is checked first.
+
+    Returns:
+        list[DQRule]: the rules to apply to this table, in the order they
+        should be executed.
+    """
 
     configured_rules: List[DQRule] = []
 
@@ -1073,6 +1361,7 @@ def get_rules_for_source(
 
 
 def get_rule_count() -> int:
+    """Return the total number of hard-coded rules in DQ_RULES."""
     return len(DQ_RULES)
 
 
@@ -1085,6 +1374,31 @@ def execute_rules(
     rules: List[DQRule],
     reference_df: Optional[DataFrame] = None,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Run a whole list of DQ rules against one source dataframe, chaining
+    them so that a row must pass every rule to reach the final STAGING
+    output (a row rejected by an earlier rule is not re-evaluated by later
+    rules).
+
+    Args:
+        source_df: The LANDING-layer dataframe to check.
+        rules: The ordered list of DQRule objects to apply (see
+            get_rules_for_source).
+        reference_df: The parent/reference dataframe required by most rule
+            types; passed through unchanged to every rule in the list.
+
+    Returns:
+        tuple[DataFrame, DataFrame]:
+          - passed_df: rows that survived every rule, ready for STAGING.
+          - rejected_df: the union of every rule's rejected rows (each
+            still tagged with which rule rejected it via add_dq_metadata),
+            or an empty-but-schema-matching dataframe if nothing was
+            rejected.
+
+    Raises:
+        DQProcessingError: if source_df is None or rules is empty, since
+            running with no rules would silently pass every row through.
+    """
 
     if source_df is None:
         raise DQProcessingError(
@@ -1147,6 +1461,17 @@ def get_result_counts(
     passed_df: DataFrame,
     rejected_df: DataFrame,
 ) -> Dict[str, int]:
+    """
+    Compute simple pass/reject row counts for a DQ run, used in log
+    messages and email alert bodies.
+
+    Args:
+        passed_df: The dataframe of rows that passed all DQ rules.
+        rejected_df: The dataframe of rows rejected by any DQ rule.
+
+    Returns:
+        dict: {"passed_count": int, "rejected_count": int}.
+    """
 
     return {
         "passed_count": passed_df.count(),
@@ -1165,6 +1490,30 @@ def execute_source_dq(
     reference_table: Optional[str] = None,
     batch_id: Optional[int] = None,
 ) -> Tuple[DataFrame, DataFrame]:
+    """
+    Convenience, single-table entry point that resolves the applicable DQ
+    rules and runs them, without writing anything to STAGING itself -
+    intended for ad-hoc/interactive use (e.g. testing a table's rules in a
+    notebook) rather than the full batch pipeline (see
+    main_data_quality_pipeline for the production entry point).
+
+    Args:
+        source_identifier: Source configuration identifier used to look up
+            control-table rules, if configured.
+        source_table: Fully-qualified LANDING-layer table to check.
+        source_system_name: Optional source-system filter.
+        reference_table: Fully-qualified parent/reference table required
+            by most rule types (e.g. the matching name table).
+        batch_id: Optional explicit batch to restrict processing to; if
+            omitted, the latest batch present in source_table is used
+            (see filter_to_batch).
+
+    Returns:
+        tuple[DataFrame, DataFrame]: (passed_df, rejected_df).
+
+    Raises:
+        DQProcessingError: if source_table is blank or does not exist.
+    """
 
     try:
 
@@ -1499,6 +1848,11 @@ def get_configured_rule_count(
     source_identifier: str,
     source_system_name: Optional[str] = None,
 ) -> int:
+    """
+    Return how many active DQ rules are configured for a source in the
+    control table (0 if the control table is not used in this environment
+    or has no active rules for this source).
+    """
 
     return len(
         get_configured_rules_for_source(

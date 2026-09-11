@@ -1,4 +1,4 @@
-"""Transform the incoming SBC search payload into a JISB request payload.
+"""Transform the incoming SBC search payload into a IQVIA request payload.
 
 Source of truth for the connected SBC flow: `sbc (1).py`.
 The standalone transformation sample is not used to alter this contract.
@@ -15,7 +15,7 @@ LAST_NAME = "hcp.lastName"
 ADDRESS_COUNTRY_CODE = "address.countryCode"
 
 
-JISB_FIELD_MAPPING = (
+IQVIA_FIELD_MAPPING = (
     (FIRST_NAME, "individual.firstName", "EXACT", 1),
     (MIDDLE_NAME, "individual.middleName", "Fuzzy", 1),
     (LAST_NAME, "individual.lastName", "Fuzzy", 1),
@@ -33,11 +33,25 @@ COUNTRY_TO_CODBASE = {
 }
 
 
-class JISBTransformationError(ValueError):
-    """Raised when the incoming payload cannot be transformed for JISB."""
+class IQVIATransformationError(ValueError):
+    """Raised when the incoming payload cannot be transformed for IQVIA."""
 
 
 def _values(value: Any) -> list[Any]:
+    """
+    Normalise a raw field value into a clean list of non-blank values,
+    so downstream IQVIA transformation code can always iterate a list
+    regardless of whether the source field was scalar, list, or blank.
+
+    Args:
+        value: The raw value read from the incoming record (may be a
+            scalar, a list, or None).
+
+    Returns:
+        list: If value is a list, returns only its non-null/non-blank
+        entries. Otherwise wraps a single non-blank scalar in a
+        one-element list, or returns an empty list for blank/None input.
+    """
     if isinstance(value, list):
         return [
             item
@@ -67,10 +81,10 @@ def _get_nested_value(incoming: Dict[str, Any], path: str) -> Any:
     return current
 
 
-def transform_to_jisb(
+def transform_to_iqvia(
     incoming: Dict[str, Any] | None,
 ) -> Dict[str, Any]:
-    """Build the JISB request payload used by the SBC flow."""
+    """Build the IQVIA request payload used by the SBC flow."""
 
     incoming = incoming or {}
 
@@ -79,15 +93,15 @@ def transform_to_jisb(
     ).strip().upper()
 
     if not country:
-        raise JISBTransformationError(
-            "Missing mandatory field: address.countryCode for jisb codBase mapping"
+        raise IQVIATransformationError(
+            "Missing mandatory field: address.countryCode for iqvia codBase mapping"
         )
 
     cod_base = COUNTRY_TO_CODBASE.get(country)
 
     if not cod_base:
-        raise JISBTransformationError(
-            f"Unsupported country for jisb codBase mapping: {country}"
+        raise IQVIATransformationError(
+            f"Unsupported country for iqvia codBase mapping: {country}"
         )
 
     output: Dict[str, Any] = {
@@ -97,7 +111,7 @@ def transform_to_jisb(
         "fields": [],
     }
 
-    for source, target, method, precision in JISB_FIELD_MAPPING:
+    for source, target, method, precision in IQVIA_FIELD_MAPPING:
         values = _values(
             _get_nested_value(incoming, source)
         )
@@ -120,7 +134,7 @@ def transform_to_jisb(
 __all__ = [
     "ADDRESS_COUNTRY_CODE",
     "COUNTRY_TO_CODBASE",
-    "JISB_FIELD_MAPPING",
-    "JISBTransformationError",
-    "transform_to_jisb",
+    "IQVIA_FIELD_MAPPING",
+    "IQVIATransformationError",
+    "transform_to_iqvia",
 ]

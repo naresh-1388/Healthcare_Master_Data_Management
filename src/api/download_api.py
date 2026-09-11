@@ -2,13 +2,13 @@
 HCP MDM download API.
 
 Supported lookup inputs:
-    - ORIEOId
-    - jisbId
+    - MdmHubId
+    - iqviaId
     - externalId
 
 externalId routing:
-    - starts with "20" -> ORIEO ID
-    - starts with "W"  -> JISB ID
+    - starts with "20" -> MDM ID
+    - starts with "W"  -> IQVIA ID
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ RETRIES = 3
 CONTENT_TYPE = "application/json"
 
 API_KEY = os.getenv("api_key")
-BASE_ORIEO_URL = os.getenv("base_ORIEO_url")  # Deployment-supplied.
-JISB_URL = os.getenv("jisb_url")  # Deployment-supplied.
+BASE_MDM_HUB_URL = os.getenv("base_MDM_HUB_url")  # Deployment-supplied.
+IQVIA_URL = os.getenv("iqvia_url")  # Deployment-supplied.
 REGION_NAME = os.getenv("region", "us-east-1")
 SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
 
@@ -68,26 +68,26 @@ def load_runtime_credentials() -> None:
     Importing this module must not contact AWS Secrets Manager because several
     pipeline modules import it for shared transformation/handler functions.
     """
-    global API_KEY, BASE_ORIEO_URL, JISB_URL, REGION_NAME, SECRET_NAME
-    global ORIEO_USERNAME, ORIEO_PASSWORD, JISB_USERNAME, JISB_PASSWORD
+    global API_KEY, BASE_MDM_HUB_URL, IQVIA_URL, REGION_NAME, SECRET_NAME
+    global MDM_HUB_USERNAME, MDM_HUB_PASSWORD, IQVIA_USERNAME, IQVIA_PASSWORD
 
     API_KEY = os.getenv("api_key")
-    BASE_ORIEO_URL = os.getenv("base_ORIEO_url")
-    JISB_URL = os.getenv("jisb_url")
+    BASE_MDM_HUB_URL = os.getenv("base_MDM_HUB_url")
+    IQVIA_URL = os.getenv("iqvia_url")
     REGION_NAME = os.getenv("region", "us-east-1")
     SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
 
     secret = get_secret(SECRET_NAME, REGION_NAME)
-    ORIEO_USERNAME = secret.get("username")
-    ORIEO_PASSWORD = secret.get("password")
-    JISB_USERNAME = secret.get("jisb_username")
-    JISB_PASSWORD = secret.get("jisb_password")
+    MDM_HUB_USERNAME = secret.get("username")
+    MDM_HUB_PASSWORD = secret.get("password")
+    IQVIA_USERNAME = secret.get("iqvia_username")
+    IQVIA_PASSWORD = secret.get("iqvia_password")
 
 
-ORIEO_USERNAME: str | None = None
-ORIEO_PASSWORD: str | None = None
-JISB_USERNAME: str | None = None
-JISB_PASSWORD: str | None = None
+MDM_HUB_USERNAME: str | None = None
+MDM_HUB_PASSWORD: str | None = None
+IQVIA_USERNAME: str | None = None
+IQVIA_PASSWORD: str | None = None
 
 
 def validate_request_payload(
@@ -124,12 +124,12 @@ def validate_request_payload(
             }
         )
 
-    orieo_id = (
-        payload.get("ORIEOId") or ""
+    mdm_hub_id = (
+        payload.get("MdmHubId") or ""
     ).strip()
 
-    jisb_id = (
-        payload.get("jisbId") or ""
+    iqvia_id = (
+        payload.get("iqviaId") or ""
     ).strip()
 
     external_id = (
@@ -139,8 +139,8 @@ def validate_request_payload(
     provided_ids = [
         value
         for value in (
-            orieo_id,
-            jisb_id,
+            mdm_hub_id,
+            iqvia_id,
             external_id,
         )
         if value
@@ -150,11 +150,11 @@ def validate_request_payload(
         errors.append(
             {
                 "field_path": (
-                    "ORIEOId/jisbId/externalId"
+                    "MdmHubId/iqviaId/externalId"
                 ),
                 "error_type": "MISSING",
                 "message": (
-                    "One of ORIEOId, jisbId or externalId "
+                    "One of MdmHubId, iqviaId or externalId "
                     "must be provided"
                 ),
             }
@@ -163,11 +163,11 @@ def validate_request_payload(
         errors.append(
             {
                 "field_path": (
-                    "ORIEOId/jisbId/externalId"
+                    "MdmHubId/iqviaId/externalId"
                 ),
                 "error_type": "INVALID",
                 "message": (
-                    "Only one of ORIEOId, jisbId or externalId "
+                    "Only one of MdmHubId, iqviaId or externalId "
                     "should be provided"
                 ),
             }
@@ -195,20 +195,20 @@ def call_api_with_retry(
     backoff: int,
 ) -> dict[str, Any]:
     """
-    Fetch either an ORIEO record or a JISB record with retry logic.
+    Fetch either an MDM_HUB record or a IQVIA record with retry logic.
     """
-    orieo_id = (
-        payload.get("ORIEOId") or ""
+    mdm_hub_id = (
+        payload.get("MdmHubId") or ""
     ).strip()
 
-    jisb_id = (
-        payload.get("jisbId") or ""
+    iqvia_id = (
+        payload.get("iqviaId") or ""
     ).strip()
 
     lookup_type = (
-        "ORIEO"
-        if orieo_id
-        else "jisb"
+        "MDM_HUB"
+        if mdm_hub_id
+        else "iqvia"
     )
 
     for attempt in range(1, retries + 1):
@@ -219,10 +219,10 @@ def call_api_with_retry(
                 lookup_type,
             )
 
-            if orieo_id:
+            if mdm_hub_id:
                 logger.info(
-                    "Fetching ORIEO data for ID: %s",
-                    orieo_id,
+                    "Fetching MDM_HUB data for ID: %s",
+                    mdm_hub_id,
                 )
 
                 # Endpoint intentionally preserved from supplied
@@ -252,54 +252,54 @@ def call_api_with_retry(
                     "IDS-SESSION-ID": session_id,
                 }
 
-                orieo_url = (
-                    f"{url}/{orieo_id}"
+                mdm_hub_url = (
+                    f"{url}/{mdm_hub_id}"
                     "?_showContentMeta=true"
                 )
 
                 logger.info(
-                    "ORIEO url: %s",
-                    orieo_url,
+                    "MDM_HUB url: %s",
+                    mdm_hub_url,
                 )
 
                 response = requests.get(
-                    url=orieo_url,
+                    url=mdm_hub_url,
                     headers=headers,
                     timeout=30,
                 )
 
                 logger.info(
-                    "[LOOKUP] ORIEO response status: %s",
+                    "[LOOKUP] MDM_HUB response status: %s",
                     response.status_code,
                 )
 
                 if response.status_code != 200:
                     raise RuntimeError(
-                        f"ORIEO API failed: {response.text}"
+                        f"MDM_HUB API failed: {response.text}"
                     )
 
                 return response.json()
 
             logger.info(
-                "[LOOKUP] Fetching jisb data for ID: %s",
-                jisb_id,
+                "[LOOKUP] Fetching iqvia data for ID: %s",
+                iqvia_id,
             )
 
-            jisb_headers = {
+            iqvia_headers = {
                 "Content-Type": CONTENT_TYPE,
                 "Authorization": (
                     "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
                 ),
             }
 
-            if not jisb_id or len(jisb_id) < 3:
+            if not iqvia_id or len(iqvia_id) < 3:
                 raise ValueError(
-                    "Invalid jisbId: cannot derive codBase"
+                    "Invalid iqviaId: cannot derive codBase"
                 )
 
-            cod_base = jisb_id[:3]
+            cod_base = iqvia_id[:3]
 
-            jisb_payload = {
+            iqvia_payload = {
                 "resultSize": "10",
                 "entityType": "Activity",
                 "codBases": [cod_base],
@@ -307,27 +307,27 @@ def call_api_with_retry(
                     {
                         "method": "EXACT",
                         "name": "individual.individualId",
-                        "values": [jisb_id],
+                        "values": [iqvia_id],
                     }
                 ],
             }
 
             response = requests.request(
                 "POST",
-                JISB_URL,
-                headers=jisb_headers,
-                data=json.dumps(jisb_payload),
+                IQVIA_URL,
+                headers=iqvia_headers,
+                data=json.dumps(iqvia_payload),
                 timeout=30,
             )
 
             logger.info(
-                "jisb response status: %s",
+                "iqvia response status: %s",
                 response.status_code,
             )
 
             if response.status_code != 200:
                 raise RuntimeError(
-                    f"jisb API failed: {response.text}"
+                    f"iqvia API failed: {response.text}"
                 )
 
             return response.json()
@@ -351,10 +351,10 @@ def call_api_with_retry(
     )
 
 
-def transform_orieo_download_response(
+def transform_mdm_hub_download_response(
     raw: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Transform an ORIEO download response."""
+    """Transform an MDM_HUB download response."""
     try:
         raw = raw or {}
 
@@ -891,7 +891,7 @@ def transform_orieo_download_response(
 
     except Exception:
         logger.exception(
-            "[TRANSFORM_ORIEO] Failed"
+            "[TRANSFORM_MDM_HUB] Failed"
         )
         raise
 
@@ -1050,13 +1050,13 @@ def build_structured_error_response(
         }
 
 
-def transform_jisb_to_orieo_post(
-    jisb_response: dict[str, Any],
+def transform_iqvia_to_mdm_hub_post(
+    iqvia_response: dict[str, Any],
 ) -> dict[str, Any]:
-    """Transform the JISB response into an ORIEO POST payload."""
+    """Transform the IQVIA response into an MDM_HUB POST payload."""
     try:
         results = (
-            jisb_response.get("response") or {}
+            iqvia_response.get("response") or {}
         ).get("results", [])
 
         first_result = (
@@ -1206,8 +1206,8 @@ def transform_jisb_to_orieo_post(
                     )
                 ),
                 "alternateIdentifierType": {
-                    "Code": "jisb ID",
-                    "Name": "jisb ID",
+                    "Code": "iqvia ID",
+                    "Name": "iqvia ID",
                 },
             }
         ]
@@ -1525,14 +1525,14 @@ def transform_jisb_to_orieo_post(
         raise
 
 
-def post_orieo_entity(
+def post_mdm_hub_entity(
     payload: dict[str, Any],
-    jisb_id: str,
+    iqvia_id: str,
     username: str,
     password: str,
     base_url: str,
 ) -> dict[str, Any]:
-    """Create an ORIEO entity using a JISB source key."""
+    """Create an MDM_HUB entity using a IQVIA source key."""
     try:
         session_response = requests.request(
             "POST",
@@ -1559,16 +1559,16 @@ def post_orieo_entity(
             "IDS-SESSION-ID": session_id,
         }
 
-        orieo_post_url = (
+        mdm_hub_post_url = (
             f"{base_url}"
-            "?sourceSystem=jisb"
-            f"&sourcePKey={jisb_id}"
+            "?sourceSystem=iqvia"
+            f"&sourcePKey={iqvia_id}"
             "&resolveCrosswalk=false"
         )
 
         response = requests.request(
             "POST",
-            url=orieo_post_url,
+            url=mdm_hub_post_url,
             headers=headers,
             data=json.dumps(payload),
             timeout=30,
@@ -1701,12 +1701,12 @@ def lambda_handler(
         "Payload validation successful"
     )
 
-    orieo_id = (
-        payload.get("ORIEOId") or ""
+    mdm_hub_id = (
+        payload.get("MdmHubId") or ""
     ).strip()
 
-    jisb_id = (
-        payload.get("jisbId") or ""
+    iqvia_id = (
+        payload.get("iqviaId") or ""
     ).strip()
 
     external_id = (
@@ -1716,23 +1716,23 @@ def lambda_handler(
     if external_id:
         if external_id.startswith("20"):
             logger.info(
-                "External ID %s identified as ORIEO ID",
+                "External ID %s identified as MDM ID",
                 external_id,
             )
 
-            orieo_id = external_id
-            payload["ORIEOId"] = external_id
-            payload["jisbId"] = ""
+            mdm_hub_id = external_id
+            payload["MdmHubId"] = external_id
+            payload["iqviaId"] = ""
 
         elif external_id.upper().startswith("W"):
             logger.info(
-                "External ID %s identified as jisb ID",
+                "External ID %s identified as iqvia ID",
                 external_id,
             )
 
-            jisb_id = external_id
-            payload["jisbId"] = external_id
-            payload["ORIEOId"] = ""
+            iqvia_id = external_id
+            payload["iqviaId"] = external_id
+            payload["MdmHubId"] = ""
 
         else:
             logger.error(
@@ -1744,7 +1744,7 @@ def lambda_handler(
                 {
                     "errorSummary": (
                         "externalId must start with "
-                        "'20' (ORIEO ID) or 'W' (jisb ID)"
+                        "'20' (MDM ID) or 'W' (iqvia ID)"
                     )
                 },
                 api_name="VALIDATION",
@@ -1755,93 +1755,93 @@ def lambda_handler(
                 request_id="",
             )
 
-    if jisb_id:
+    if iqvia_id:
         try:
             logger.info(
-                "Fetching details from jisb for ID: %s",
-                jisb_id,
+                "Fetching details from iqvia for ID: %s",
+                iqvia_id,
             )
 
-            jisb_response = call_api_with_retry(
+            iqvia_response = call_api_with_retry(
                 payload,
-                JISB_USERNAME,
-                JISB_PASSWORD,
-                JISB_URL,
+                IQVIA_USERNAME,
+                IQVIA_PASSWORD,
+                IQVIA_URL,
                 RETRIES,
                 BACKOFF,
             )
 
             logger.info(
-                "jisb fetch successful"
+                "iqvia fetch successful"
             )
 
-            orieo_payload = (
-                transform_jisb_to_orieo_post(
-                    jisb_response
+            mdm_hub_payload = (
+                transform_iqvia_to_mdm_hub_post(
+                    iqvia_response
                 )
             )
 
-            orieo_post_response = (
-                post_orieo_entity(
-                    payload=orieo_payload,
-                    jisb_id=jisb_id,
-                    username=ORIEO_USERNAME,
-                    password=ORIEO_PASSWORD,
-                    base_url=BASE_ORIEO_URL,
+            mdm_hub_post_response = (
+                post_mdm_hub_entity(
+                    payload=mdm_hub_payload,
+                    iqvia_id=iqvia_id,
+                    username=MDM_HUB_USERNAME,
+                    password=MDM_HUB_PASSWORD,
+                    base_url=BASE_MDM_HUB_URL,
                 )
             )
 
             logger.info(
-                "ORIEO POST successful"
+                "MDM_HUB POST successful"
             )
 
-            orieo_id_generated = (
-                orieo_post_response.get(
+            mdm_hub_id_generated = (
+                mdm_hub_post_response.get(
                     "businessId"
                 )
             )
 
-            if not orieo_id_generated:
+            if not mdm_hub_id_generated:
                 raise RuntimeError(
-                    "ORIEO ID not returned after POST"
+                    "MDM ID not returned after POST"
                 )
 
             logger.info(
-                "Generated ORIEO ID: %s",
-                orieo_id_generated,
+                "Generated MDM ID: %s",
+                mdm_hub_id_generated,
             )
 
-            orieo_get_payload = {
-                "ORIEOId": orieo_id_generated
+            mdm_hub_get_payload = {
+                "MdmHubId": mdm_hub_id_generated
             }
 
-            orieo_get_response = (
+            mdm_hub_get_response = (
                 call_api_with_retry(
-                    orieo_get_payload,
-                    ORIEO_USERNAME,
-                    ORIEO_PASSWORD,
-                    BASE_ORIEO_URL,
+                    mdm_hub_get_payload,
+                    MDM_HUB_USERNAME,
+                    MDM_HUB_PASSWORD,
+                    BASE_MDM_HUB_URL,
                     RETRIES,
                     BACKOFF,
                 )
             )
 
             logger.info(
-                "ORIEO GET successful"
+                "MDM_HUB GET successful"
             )
 
-            return transform_orieo_download_response(
-                orieo_get_response
+            return transform_mdm_hub_download_response(
+                mdm_hub_get_response
             )
 
         except Exception as exc:
             logger.exception(
-                "jisb->ORIEO post Failed"
+                "iqvia->MDM_HUB post Failed"
             )
 
             error_info = extract_error_details(
                 exc,
-                api_name="jisb_ORIEO_FLOW",
+                api_name="iqvia_mdm_hub_flow",
             )
 
             return build_structured_error_response(
@@ -1849,18 +1849,18 @@ def lambda_handler(
                 request_id="",
             )
 
-    if orieo_id:
+    if mdm_hub_id:
         try:
             logger.info(
-                "Fetching details from ORIEO for ID: %s",
-                orieo_id,
+                "Fetching details from MDM_HUB for ID: %s",
+                mdm_hub_id,
             )
 
             response = call_api_with_retry(
                 payload,
-                ORIEO_USERNAME,
-                ORIEO_PASSWORD,
-                BASE_ORIEO_URL,
+                MDM_HUB_USERNAME,
+                MDM_HUB_PASSWORD,
+                BASE_MDM_HUB_URL,
                 RETRIES,
                 BACKOFF,
             )
@@ -1869,7 +1869,7 @@ def lambda_handler(
                 "Details fetched successfully"
             )
 
-            return transform_orieo_download_response(
+            return transform_mdm_hub_download_response(
                 response
             )
 
@@ -1880,7 +1880,7 @@ def lambda_handler(
 
             error_info = extract_error_details(
                 exc,
-                api_name="ORIEO_FETCH",
+                api_name="MDM_HUB_FETCH",
             )
 
             return build_structured_error_response(
@@ -1903,14 +1903,14 @@ def lambda_handler(
 # ============================================================================
 # USER CONFIGURATION - SET THESE IN THE RUNTIME ENVIRONMENT / AWS
 # ============================================================================
-# 1) base_ORIEO_url : ORIEO base API URL. Set in Databricks secret/env config.
-# 2) jisb_url       : JISB API URL. Set in Databricks secret/env config.
+# 1) base_MDM_HUB_url : MDM_HUB base API URL. Set in Databricks secret/env config.
+# 2) iqvia_url       : IQVIA API URL. Set in Databricks secret/env config.
 # 3) secret_name    : AWS Secrets Manager secret name containing API credentials.
 # 4) AWS region     : configure the Databricks/AWS runtime region used by boto3.
 # 5) API_KEY        : configure the inbound API bearer key in the runtime; do NOT hardcode it.
 # 6) Do not put usernames/passwords directly in this file. Put them in the AWS
 #    Secrets Manager secret using the source-defined keys consumed above.
-# 7) If ORIEO/JISB endpoint paths differ by environment, change only the
+# 7) If MDM_HUB/IQVIA endpoint paths differ by environment, change only the
 #    environment variables, not the transformation logic below.
 # ============================================================================
 

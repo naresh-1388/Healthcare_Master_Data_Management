@@ -33,14 +33,14 @@ sys.path.insert(0, repo_path)
 # Import only modules required by the validation tests.
 # This intentionally avoids importing API modules that can require
 # runtime environment variables or AWS Secrets Manager credentials.
-from src.api import transform_to_jisb
-from src.api import transform_to_orieo
+from src.api import transform_to_iqvia
+from src.api import transform_to_mdm_hub
 from src.dq import data_quality
 from src.core import runtime_config
 
 # Reload the modules so the notebook uses the current Git repository code.
-importlib.reload(transform_to_jisb)
-importlib.reload(transform_to_orieo)
+importlib.reload(transform_to_iqvia)
+importlib.reload(transform_to_mdm_hub)
 importlib.reload(data_quality)
 importlib.reload(runtime_config)
 
@@ -96,12 +96,12 @@ print("DQ rule-set validation: PASS")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Test 1 — JISB transformation: Netherlands positive case
+# MAGIC ## Test 1 — IQVIA transformation: Netherlands positive case
 
 # COMMAND ----------
 
 # ============================================================
-# TEST 1 — JISB POSITIVE CASE: NETHERLANDS
+# TEST 1 — IQVIA POSITIVE CASE: NETHERLANDS
 # ============================================================
 # Expected result:
 #   NL -> WNL
@@ -125,25 +125,25 @@ mock_hcp_nl = {
     },
 }
 
-jisb_nl = transform_to_jisb.transform_to_jisb(mock_hcp_nl)
+iqvia_nl = transform_to_iqvia.transform_to_iqvia(mock_hcp_nl)
 
-assert isinstance(jisb_nl, dict)
-assert jisb_nl["codBases"] == ["WNL"]
+assert isinstance(iqvia_nl, dict)
+assert iqvia_nl["codBases"] == ["WNL"]
 
-print("JISB codBases:", jisb_nl["codBases"])
-print("JISB fields:", len(jisb_nl["fields"]))
-print("TEST 1 — JISB NL positive case: PASS")
+print("IQVIA codBases:", iqvia_nl["codBases"])
+print("IQVIA fields:", len(iqvia_nl["fields"]))
+print("TEST 1 — IQVIA NL positive case: PASS")
 
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Test 2 — JISB transformation: Belgium positive case
+# MAGIC ## Test 2 — IQVIA transformation: Belgium positive case
 
 # COMMAND ----------
 
 # ============================================================
-# TEST 2 — JISB POSITIVE CASE: BELGIUM
+# TEST 2 — IQVIA POSITIVE CASE: BELGIUM
 # ============================================================
 # Expected result:
 #   BE -> WBE
@@ -164,31 +164,31 @@ mock_hcp_be = {
     },
 }
 
-jisb_be = transform_to_jisb.transform_to_jisb(mock_hcp_be)
+iqvia_be = transform_to_iqvia.transform_to_iqvia(mock_hcp_be)
 
-assert isinstance(jisb_be, dict)
-assert jisb_be["codBases"] == ["WBE"]
+assert isinstance(iqvia_be, dict)
+assert iqvia_be["codBases"] == ["WBE"]
 
-print("JISB codBases:", jisb_be["codBases"])
-print("JISB fields:", len(jisb_be["fields"]))
-print("TEST 2 — JISB BE positive case: PASS")
+print("IQVIA codBases:", iqvia_be["codBases"])
+print("IQVIA fields:", len(iqvia_be["fields"]))
+print("TEST 2 — IQVIA BE positive case: PASS")
 
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Test 3 — JISB transformation: unsupported country negative case
+# MAGIC ## Test 3 — IQVIA transformation: unsupported country negative case
 
 # COMMAND ----------
 
 # ============================================================
-# TEST 3 — JISB NEGATIVE CASE: UNSUPPORTED COUNTRY
+# TEST 3 — IQVIA NEGATIVE CASE: UNSUPPORTED COUNTRY
 # ============================================================
 # US is intentionally outside the project country-to-codBase
-# mapping used by the JISB transformation.
+# mapping used by the IQVIA transformation.
 #
 # Expected behavior:
-#   The transformation raises JISBTransformationError.
+#   The transformation raises IQVIATransformationError.
 # ============================================================
 
 mock_hcp_us = {
@@ -207,11 +207,11 @@ mock_hcp_us = {
 }
 
 try:
-    transform_to_jisb.transform_to_jisb(mock_hcp_us)
+    transform_to_iqvia.transform_to_iqvia(mock_hcp_us)
     raise AssertionError(
-        "Expected JISBTransformationError for unsupported country US."
+        "Expected IQVIATransformationError for unsupported country US."
     )
-except transform_to_jisb.JISBTransformationError as exc:
+except transform_to_iqvia.IQVIATransformationError as exc:
     print("Expected error:", exc)
     print("TEST 3 — Unsupported country negative case: PASS")
 
@@ -219,15 +219,15 @@ except transform_to_jisb.JISBTransformationError as exc:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Test 4 — JISB transformation: missing countryCode negative case
+# MAGIC ## Test 4 — IQVIA transformation: missing countryCode negative case
 
 # COMMAND ----------
 
 # ============================================================
-# TEST 4 — JISB NEGATIVE CASE: MISSING COUNTRY CODE
+# TEST 4 — IQVIA NEGATIVE CASE: MISSING COUNTRY CODE
 # ============================================================
 # Expected behavior:
-#   The transformation raises JISBTransformationError because
+#   The transformation raises IQVIATransformationError because
 #   address.countryCode is mandatory for codBase selection.
 # ============================================================
 
@@ -246,11 +246,11 @@ mock_hcp_missing_country = {
 }
 
 try:
-    transform_to_jisb.transform_to_jisb(mock_hcp_missing_country)
+    transform_to_iqvia.transform_to_iqvia(mock_hcp_missing_country)
     raise AssertionError(
-        "Expected JISBTransformationError for missing countryCode."
+        "Expected IQVIATransformationError for missing countryCode."
     )
-except transform_to_jisb.JISBTransformationError as exc:
+except transform_to_iqvia.IQVIATransformationError as exc:
     print("Expected error:", exc)
     print("TEST 4 — Missing countryCode negative case: PASS")
 
@@ -418,16 +418,16 @@ print("=" * 60)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Test 7 — ORIEO transformation verification
+# MAGIC ## Test 7 — MDM_HUB transformation verification
 
 # COMMAND ----------
 
 # ============================================================
-# TEST 7 — ORIEO TRANSFORMATION VERIFICATION
+# TEST 7 — MDM_HUB TRANSFORMATION VERIFICATION
 # ============================================================
 # IMPORTANT:
-#   The project's ORIEO transformation does NOT consume the JISB
-#   request payload produced by transform_to_jisb().
+#   The project's MDM_HUB transformation does NOT consume the IQVIA
+#   request payload produced by transform_to_iqvia().
 #
 #   Its source mapping uses the original SBC-style dotted source
 #   attributes such as:
@@ -440,12 +440,12 @@ print("=" * 60)
 #       address.longPostalCode
 #       address.type
 #
-# Therefore this test uses the actual ORIEO input contract from
-# the project source instead of incorrectly passing the JISB
-# response into the ORIEO function.
+# Therefore this test uses the actual MDM_HUB input contract from
+# the project source instead of incorrectly passing the IQVIA
+# response into the MDM_HUB function.
 # ============================================================
 
-mock_orieo_input = {
+mock_mdm_hub_input = {
     "hcp.firstName": "John",
     "hcp.middleName": "A",
     "hcp.lastName": "Smith",
@@ -456,12 +456,12 @@ mock_orieo_input = {
     "address.type": "Primary",
 }
 
-orieo_response = transform_to_orieo.transform_to_orieo(mock_orieo_input)
+mdm_hub_response = transform_to_mdm_hub.transform_to_mdm_hub(mock_mdm_hub_input)
 
-assert isinstance(orieo_response, dict)
+assert isinstance(mdm_hub_response, dict)
 
-search_controls = orieo_response["searchControls"]
-search_record = orieo_response["data"]["searchRecord"]
+search_controls = mdm_hub_response["searchControls"]
+search_record = mdm_hub_response["data"]["searchRecord"]
 
 # Validate country-code -> population mapping.
 assert search_controls["population"] == "netherlands"
@@ -478,11 +478,11 @@ assert search_record["X_hcp_address"][0]["X_country"]["Code"] == "NL"
 assert search_record["X_hcp_address"][0]["X_postal_code"] == "1011AB"
 assert search_record["X_hcp_address"][0]["X_address_type"]["Code"] == "Primary"
 
-print("ORIEO population:", search_controls["population"])
-print("ORIEO fullName:", search_record["fullName"])
-print("ORIEO address:", search_record["X_hcp_address"][0])
+print("MDM_HUB population:", search_controls["population"])
+print("MDM_HUB fullName:", search_record["fullName"])
+print("MDM_HUB address:", search_record["X_hcp_address"][0])
 
-print("\nTEST 7 — ORIEO transformation verification: PASS")
+print("\nTEST 7 — MDM_HUB transformation verification: PASS")
 
 
 # COMMAND ----------
@@ -494,13 +494,13 @@ print("\nTEST 7 — ORIEO transformation verification: PASS")
 # MAGIC
 # MAGIC | Test | Area | Expected |
 # MAGIC |---|---|---|
-# MAGIC | 1 | JISB — NL | PASS |
-# MAGIC | 2 | JISB — BE | PASS |
-# MAGIC | 3 | JISB — unsupported country | PASS |
-# MAGIC | 4 | JISB — missing countryCode | PASS |
+# MAGIC | 1 | IQVIA — NL | PASS |
+# MAGIC | 2 | IQVIA — BE | PASS |
+# MAGIC | 3 | IQVIA — unsupported country | PASS |
+# MAGIC | 4 | IQVIA — missing countryCode | PASS |
 # MAGIC | 5 | Data Quality rejection | PASS |
 # MAGIC | 6 | Batch / Control / Audit | PASS |
-# MAGIC | 7 | ORIEO transformation | PASS |
+# MAGIC | 7 | MDM_HUB transformation | PASS |
 # MAGIC
 # MAGIC **Next step after Test 7:** review the complete notebook execution from the first cell through Test 7. Only after that should we finalize the notebook and move to the remaining project implementation work.
 # MAGIC

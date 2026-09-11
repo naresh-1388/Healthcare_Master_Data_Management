@@ -7,9 +7,9 @@ Source of truth:
 Responsibilities:
     - Authenticate incoming requests.
     - Validate search payload.
-    - Build ORIEO and JISB request payloads.
-    - Execute ORIEO-only / ORIEO+JISB flows.
-    - Apply JISB deduplication.
+    - Build MDM_HUB and IQVIA request payloads.
+    - Execute MDM_HUB-only / MDM_HUB+IQVIA flows.
+    - Apply IQVIA deduplication.
     - Process API responses.
     - Combine responses.
     - Write error/audit information to Databricks SQL.
@@ -32,18 +32,18 @@ from typing import Any, Dict, Optional, Tuple
 import boto3
 import requests
 
-from .duplicate_jisb_records import deduplicate_jisb_records
-from .process_jisb_response import process_jisb_response
-from .process_orieo_response import process_orieo_response
-from .transform_to_jisb import transform_to_jisb
-from .transform_to_orieo import transform_to_orieo
+from .duplicate_iqvia_records import deduplicate_iqvia_records
+from .process_iqvia_response import process_iqvia_response
+from .process_mdm_hub_response import process_mdm_hub_response
+from .transform_to_iqvia import transform_to_iqvia
+from .transform_to_mdm_hub import transform_to_mdm_hub
 
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 
-logger = logging.getLogger("sbc_ORIEO")
+logger = logging.getLogger("sbc_MDM_HUB")
 logger.setLevel(logging.INFO)
 
 
@@ -63,8 +63,8 @@ API_KEY = os.getenv("api_key")
 SECRET_NAME = os.getenv("secret_name")
 REGION_NAME = os.getenv("region", "us-east-1")
 
-ORIEO_URL = os.getenv("ORIEO_url")
-JISB_URL = os.getenv("jisb_url")
+MDM_HUB_URL = os.getenv("MDM_HUB_url")
+IQVIA_URL = os.getenv("iqvia_url")
 
 
 # ---------------------------------------------------------------------------
@@ -114,16 +114,16 @@ def get_secret(
 
 
 # Load API credentials lazily. Importing this module must not call AWS.
-ORIEO_USERNAME: Optional[str] = None
-ORIEO_PASSWORD: Optional[str] = None
-JISB_USERNAME: Optional[str] = None
-JISB_PASSWORD: Optional[str] = None
+MDM_HUB_USERNAME: Optional[str] = None
+MDM_HUB_PASSWORD: Optional[str] = None
+IQVIA_USERNAME: Optional[str] = None
+IQVIA_PASSWORD: Optional[str] = None
 
 
 def load_runtime_credentials() -> None:
-    """Load ORIEO/JISB credentials from AWS Secrets Manager at runtime."""
-    global ORIEO_USERNAME, ORIEO_PASSWORD
-    global JISB_USERNAME, JISB_PASSWORD
+    """Load MDM_HUB/IQVIA credentials from AWS Secrets Manager at runtime."""
+    global MDM_HUB_USERNAME, MDM_HUB_PASSWORD
+    global IQVIA_USERNAME, IQVIA_PASSWORD
 
     if not SECRET_NAME:
         raise RuntimeError("Missing required runtime configuration: secret_name")
@@ -132,10 +132,10 @@ def load_runtime_credentials() -> None:
     if not isinstance(secret, dict):
         raise RuntimeError("AWS Secrets Manager secret must contain a JSON object")
 
-    ORIEO_USERNAME = secret.get("username")
-    ORIEO_PASSWORD = secret.get("password")
-    JISB_USERNAME = secret.get("jisb_username")
-    JISB_PASSWORD = secret.get("jisb_password")
+    MDM_HUB_USERNAME = secret.get("username")
+    MDM_HUB_PASSWORD = secret.get("password")
+    IQVIA_USERNAME = secret.get("iqvia_username")
+    IQVIA_PASSWORD = secret.get("iqvia_password")
 
 
 # ---------------------------------------------------------------------------
@@ -776,11 +776,11 @@ def write_to_audit_table(
             request_received_time,
             response_sent_time,
             response_time,
-            searched_in_jisb,
-            ORIEO_original_response,
-            ORIEO_structured_response,
-            jisb_original_response,
-            jisb_structured_response
+            searched_in_iqvia,
+            MDM_HUB_original_response,
+            MDM_HUB_structured_response,
+            iqvia_original_response,
+            iqvia_structured_response
         )
         VALUES (
             {sql_value(record.get("request_id"))},
@@ -789,11 +789,11 @@ def write_to_audit_table(
             TIMESTAMP {sql_value(record.get("request_received_time"))},
             TIMESTAMP {sql_value(record.get("response_sent_time"))},
             {sql_value(record.get("response_time"))},
-            {str(record.get("searched_in_jisb", False)).lower()},
-            {sql_value(record.get("ORIEO_original_response"))},
-            {sql_value(record.get("ORIEO_structured_response"))},
-            {sql_value(record.get("jisb_original_response"))},
-            {sql_value(record.get("jisb_structured_response"))}
+            {str(record.get("searched_in_iqvia", False)).lower()},
+            {sql_value(record.get("MDM_HUB_original_response"))},
+            {sql_value(record.get("MDM_HUB_structured_response"))},
+            {sql_value(record.get("iqvia_original_response"))},
+            {sql_value(record.get("iqvia_structured_response"))}
         )
     """
 
@@ -824,10 +824,10 @@ def call_api_with_retry(
     api_name: str,
 ):
     """
-    Call ORIEO/JISB API with retry behavior from the source.
+    Call MDM_HUB/IQVIA API with retry behavior from the source.
 
     NOTE:
-        The ORIEO login endpoint in the supplied source is a placeholder.
+        The MDM_HUB login endpoint in the supplied source is a placeholder.
         It is intentionally preserved here.
     """
     try:
@@ -835,11 +835,11 @@ def call_api_with_retry(
             f"Creating session for {api_name}"
         )
 
-        if api_name == "ORIEO":
+        if api_name == "MDM_HUB":
 
             session_response = requests.request(
                 "POST",
-                "https://<ORIEO_HOST>/sas/public/core/v3/login",
+                "https://<MDM_HUB_HOST>/sas/public/core/v3/login",
                 headers={
                     "Accept": CONTENT_TYPE,
                     "Content-Type": CONTENT_TYPE,
@@ -1118,12 +1118,12 @@ def call_api_with_retry(
 # ---------------------------------------------------------------------------
 
 def has_high_score(
-    ORIEO_raw: Dict[str, Any],
+    MDM_HUB_raw: Dict[str, Any],
     match_score: int,
 ) -> bool:
-    """Return True when any ORIEO record meets match score."""
+    """Return True when any MDM_HUB record meets match score."""
     records = (
-        ORIEO_raw
+        MDM_HUB_raw
         .get("searchResult", {})
         .get("records", [])
     )
@@ -1137,15 +1137,15 @@ def has_high_score(
 
 
 def combined_response(
-    ORIEO_response: Optional[Dict[str, Any]] = None,
-    jisb_response: Optional[Dict[str, Any]] = None,
+    MDM_HUB_response: Optional[Dict[str, Any]] = None,
+    iqvia_response: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Combine structured ORIEO and JISB responses."""
+    """Combine structured MDM_HUB and IQVIA responses."""
     combined_records: list[Dict[str, Any]] = []
 
     for response in (
-        ORIEO_response,
-        jisb_response,
+        MDM_HUB_response,
+        iqvia_response,
     ):
         if not response:
             continue
@@ -1187,10 +1187,10 @@ def build_sbc_audit_record(
     headers: Dict[str, Any],
     request_received_time: datetime,
     response_sent_time: datetime,
-    ORIEO_original: Optional[Dict[str, Any]] = None,
-    ORIEO_structured: Optional[Dict[str, Any]] = None,
-    jisb_original: Optional[Dict[str, Any]] = None,
-    jisb_structured: Optional[Dict[str, Any]] = None,
+    MDM_HUB_original: Optional[Dict[str, Any]] = None,
+    MDM_HUB_structured: Optional[Dict[str, Any]] = None,
+    iqvia_original: Optional[Dict[str, Any]] = None,
+    iqvia_structured: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build the SBC audit record.
@@ -1201,10 +1201,10 @@ def build_sbc_audit_record(
     payload = payload or {}
     headers = headers or {}
 
-    searched_in_jisb = (
+    searched_in_iqvia = (
         str(
             headers.get(
-                "jisb",
+                "iqvia",
                 "",
             )
         ).lower()
@@ -1238,18 +1238,18 @@ def build_sbc_audit_record(
             response_sent_time.isoformat()
         ),
         "response_time": response_time,
-        "searched_in_jisb": searched_in_jisb,
-        "ORIEO_original_response": json.dumps(
-            ORIEO_original or {}
+        "searched_in_iqvia": searched_in_iqvia,
+        "MDM_HUB_original_response": json.dumps(
+            MDM_HUB_original or {}
         ),
-        "ORIEO_structured_response": json.dumps(
-            ORIEO_structured or {}
+        "MDM_HUB_structured_response": json.dumps(
+            MDM_HUB_structured or {}
         ),
-        "jisb_original_response": json.dumps(
-            jisb_original or {}
+        "iqvia_original_response": json.dumps(
+            iqvia_original or {}
         ),
-        "jisb_structured_response": json.dumps(
-            jisb_structured or {}
+        "iqvia_structured_response": json.dumps(
+            iqvia_structured or {}
         ),
     }
 
@@ -1421,54 +1421,54 @@ def lambda_handler(
         )
 
     # --------------------------------------------------
-    # Build ORIEO payload
+    # Build MDM_HUB payload
     # --------------------------------------------------
 
-    ORIEO_payload_dict = transform_to_orieo(
+    MDM_HUB_payload_dict = transform_to_mdm_hub(
         payload_dict
     )
 
-    ORIEO_payload = json.dumps(
-        ORIEO_payload_dict
+    MDM_HUB_payload = json.dumps(
+        MDM_HUB_payload_dict
     )
 
     logger.info(
-        f"ORIEO payload: {ORIEO_payload}"
+        f"MDM_HUB payload: {MDM_HUB_payload}"
     )
 
     # --------------------------------------------------
-    # Build JISB payload
+    # Build IQVIA payload
     # --------------------------------------------------
 
-    jisb_payload_dict = transform_to_jisb(
+    iqvia_payload_dict = transform_to_iqvia(
         payload_dict
     )
 
-    jisb_payload = json.dumps(
-        jisb_payload_dict
+    iqvia_payload = json.dumps(
+        iqvia_payload_dict
     )
 
     logger.info(
-        f"jisb payload: {jisb_payload}"
+        f"iqvia payload: {iqvia_payload}"
     )
 
     # --------------------------------------------------
     # Headers
     # --------------------------------------------------
 
-    jisb_header = headers.get(
-        "jisb",
+    iqvia_header = headers.get(
+        "iqvia",
         False,
     )
 
-    if isinstance(jisb_header, str):
-        jisb_flag = (
-            jisb_header.strip().lower()
+    if isinstance(iqvia_header, str):
+        iqvia_flag = (
+            iqvia_header.strip().lower()
             == "true"
         )
     else:
-        jisb_flag = bool(
-            jisb_header
+        iqvia_flag = bool(
+            iqvia_header
         )
 
     match_score_header = headers.get(
@@ -1481,56 +1481,56 @@ def lambda_handler(
     )
 
     logger.info(
-        f"jisb flag = {jisb_flag}"
+        f"iqvia flag = {iqvia_flag}"
     )
 
     logger.info(
         f"matchScore = {match_score}"
     )
 
-    ORIEO_raw = None
-    ORIEO_structured = None
-    jisb_raw = None
-    jisb_structured = None
+    MDM_HUB_raw = None
+    MDM_HUB_structured = None
+    iqvia_raw = None
+    iqvia_structured = None
 
     # ==================================================
-    # ORIEO ONLY
+    # MDM_HUB ONLY
     # ==================================================
 
-    if not jisb_flag:
+    if not iqvia_flag:
 
         logger.info(
-            "Executing ORIEO ONLY"
+            "Executing MDM_HUB ONLY"
         )
 
         try:
-            ORIEO_response = call_api_with_retry(
-                username=ORIEO_USERNAME,
-                password=ORIEO_PASSWORD,
-                url=ORIEO_URL,
-                payload=ORIEO_payload,
+            MDM_HUB_response = call_api_with_retry(
+                username=MDM_HUB_USERNAME,
+                password=MDM_HUB_PASSWORD,
+                url=MDM_HUB_URL,
+                payload=MDM_HUB_payload,
                 max_retries=MAX_RETRIES,
                 backoff_seconds=BACKOFF_SECONDS,
-                api_name="ORIEO",
+                api_name="MDM_HUB",
             )
 
-            if ORIEO_response is None:
+            if MDM_HUB_response is None:
                 raise RuntimeError(
-                    "ORIEO API returned no response"
+                    "MDM_HUB API returned no response"
                 )
 
-            ORIEO_raw = (
-                ORIEO_response.json()
+            MDM_HUB_raw = (
+                MDM_HUB_response.json()
             )
 
             if (
-                ORIEO_response.status_code
+                MDM_HUB_response.status_code
                 != 200
             ):
                 error_info = (
                     extract_error_details(
-                        ORIEO_response,
-                        api_name="ORIEO",
+                        MDM_HUB_response,
+                        api_name="MDM_HUB",
                     )
                 )
 
@@ -1539,66 +1539,66 @@ def lambda_handler(
                     request_id=request_id,
                 )
 
-            ORIEO_structured = (
-                process_orieo_response(
-                    ORIEO_raw,
+            MDM_HUB_structured = (
+                process_mdm_hub_response(
+                    MDM_HUB_raw,
                     match_score,
                 )
             )
 
-            ORIEO_records = (
-                ORIEO_structured
+            MDM_HUB_records = (
+                MDM_HUB_structured
                 .get("searchResult", {})
                 .get("records", [])
             )
 
             final_response = (
                 combined_response(
-                    ORIEO_response=ORIEO_structured
+                    MDM_HUB_response=MDM_HUB_structured
                 )
             )
 
             # --------------------------------------------------
-            # JISB fallback
+            # IQVIA fallback
             # --------------------------------------------------
 
             if (
-                not ORIEO_records
+                not MDM_HUB_records
                 or not has_high_score(
-                    ORIEO_raw,
+                    MDM_HUB_raw,
                     match_score,
                 )
             ):
                 logger.info(
-                    "No ORIEO results greater than "
-                    "match score. Calling jisb."
+                    "No MDM_HUB results greater than "
+                    "match score. Calling iqvia."
                 )
 
-                jisb_response = (
+                iqvia_response = (
                     call_api_with_retry(
-                        username=JISB_USERNAME,
-                        password=JISB_PASSWORD,
-                        url=JISB_URL,
-                        payload=jisb_payload,
+                        username=IQVIA_USERNAME,
+                        password=IQVIA_PASSWORD,
+                        url=IQVIA_URL,
+                        payload=iqvia_payload,
                         max_retries=MAX_RETRIES,
                         backoff_seconds=BACKOFF_SECONDS,
-                        api_name="jisb",
+                        api_name="iqvia",
                     )
                 )
 
-                if jisb_response is None:
+                if iqvia_response is None:
                     raise RuntimeError(
-                        "jisb API returned no response"
+                        "iqvia API returned no response"
                     )
 
                 if (
-                    jisb_response.status_code
+                    iqvia_response.status_code
                     != 200
                 ):
                     error_info = (
                         extract_error_details(
-                            jisb_response,
-                            api_name="jisb",
+                            iqvia_response,
+                            api_name="iqvia",
                         )
                     )
 
@@ -1607,20 +1607,20 @@ def lambda_handler(
                         request_id=request_id,
                     )
 
-                jisb_raw = (
-                    jisb_response.json()
+                iqvia_raw = (
+                    iqvia_response.json()
                 )
 
-                jisb_structured = (
-                    process_jisb_response(
-                        jisb_raw
+                iqvia_structured = (
+                    process_iqvia_response(
+                        iqvia_raw
                     )
                 )
 
                 final_response = (
                     combined_response(
-                        ORIEO_response=ORIEO_structured,
-                        jisb_response=jisb_structured,
+                        MDM_HUB_response=MDM_HUB_structured,
+                        iqvia_response=iqvia_structured,
                     )
                 )
 
@@ -1638,13 +1638,13 @@ def lambda_handler(
                     response_sent_time=(
                         response_sent_time
                     ),
-                    ORIEO_original=ORIEO_raw,
-                    ORIEO_structured=(
-                        ORIEO_structured
+                    MDM_HUB_original=MDM_HUB_raw,
+                    MDM_HUB_structured=(
+                        MDM_HUB_structured
                     ),
-                    jisb_original=jisb_raw,
-                    jisb_structured=(
-                        jisb_structured
+                    iqvia_original=iqvia_raw,
+                    iqvia_structured=(
+                        iqvia_structured
                     ),
                 )
             )
@@ -1668,12 +1668,12 @@ def lambda_handler(
 
         except Exception as exc:
             logger.exception(
-                "ORIEO failed"
+                "MDM_HUB failed"
             )
 
             error_info = extract_error_details(
                 exc,
-                api_name="ORIEO",
+                api_name="MDM_HUB",
             )
 
             return build_structured_error_response(
@@ -1682,11 +1682,11 @@ def lambda_handler(
             )
 
     # ==================================================
-    # ORIEO + JISB IN PARALLEL
+    # MDM_HUB + IQVIA IN PARALLEL
     # ==================================================
 
     logger.info(
-        "Executing ORIEO + jisb in parallel"
+        "Executing MDM_HUB + iqvia in parallel"
     )
 
     raw_results: Dict[str, Any] = {}
@@ -1699,25 +1699,25 @@ def lambda_handler(
         futures = {
             executor.submit(
                 call_api_with_retry,
-                ORIEO_USERNAME,
-                ORIEO_PASSWORD,
-                ORIEO_URL,
-                ORIEO_payload,
+                MDM_HUB_USERNAME,
+                MDM_HUB_PASSWORD,
+                MDM_HUB_URL,
+                MDM_HUB_payload,
                 MAX_RETRIES,
                 BACKOFF_SECONDS,
-                "ORIEO",
-            ): "ORIEO",
+                "MDM_HUB",
+            ): "MDM_HUB",
 
             executor.submit(
                 call_api_with_retry,
-                JISB_USERNAME,
-                JISB_PASSWORD,
-                JISB_URL,
-                jisb_payload,
+                IQVIA_USERNAME,
+                IQVIA_PASSWORD,
+                IQVIA_URL,
+                iqvia_payload,
                 MAX_RETRIES,
                 BACKOFF_SECONDS,
-                "jisb",
-            ): "jisb",
+                "iqvia",
+            ): "iqvia",
         }
 
         for future in as_completed(
@@ -1753,10 +1753,10 @@ def lambda_handler(
                 else:
                     raw_results[api_name] = raw
 
-                    if api_name == "ORIEO":
-                        ORIEO_raw = raw
+                    if api_name == "MDM_HUB":
+                        MDM_HUB_raw = raw
                     else:
-                        jisb_raw = raw
+                        iqvia_raw = raw
 
             except Exception as exc:
                 logger.exception(
@@ -1783,18 +1783,18 @@ def lambda_handler(
 
     try:
         if (
-            "ORIEO" in raw_results
-            and "jisb" in raw_results
+            "MDM_HUB" in raw_results
+            and "iqvia" in raw_results
         ):
             logger.info(
                 "Running deduplication between "
-                "ORIEO and jisb"
+                "MDM_HUB and iqvia"
             )
 
-            raw_results["jisb"] = (
-                deduplicate_jisb_records(
-                    raw_results["ORIEO"],
-                    raw_results["jisb"],
+            raw_results["iqvia"] = (
+                deduplicate_iqvia_records(
+                    raw_results["MDM_HUB"],
+                    raw_results["iqvia"],
                 )
             )
 
@@ -1819,60 +1819,60 @@ def lambda_handler(
         )
 
     # ==================================================
-    # PROCESS ORIEO
+    # PROCESS MDM_HUB
     # ==================================================
 
     if (
-        "ORIEO" in raw_results
-        and "ORIEO" not in results
+        "MDM_HUB" in raw_results
+        and "MDM_HUB" not in results
     ):
-        results["ORIEO"] = (
-            process_orieo_response(
-                raw_results["ORIEO"],
+        results["MDM_HUB"] = (
+            process_mdm_hub_response(
+                raw_results["MDM_HUB"],
                 match_score,
             )
         )
 
-        ORIEO_structured = (
-            results["ORIEO"]
+        MDM_HUB_structured = (
+            results["MDM_HUB"]
         )
 
     # ==================================================
-    # DETERMINE JISB INCLUSION
+    # DETERMINE IQVIA INCLUSION
     # ==================================================
 
-    include_jisb = False
-    ORIEO_has_high = False
+    include_iqvia = False
+    MDM_HUB_has_high = False
 
-    if "ORIEO" in raw_results:
-        ORIEO_has_high = has_high_score(
-            raw_results["ORIEO"],
+    if "MDM_HUB" in raw_results:
+        MDM_HUB_has_high = has_high_score(
+            raw_results["MDM_HUB"],
             match_score,
         )
 
-    if jisb_flag:
-        include_jisb = True
+    if iqvia_flag:
+        include_iqvia = True
 
-    elif not ORIEO_has_high:
-        include_jisb = True
+    elif not MDM_HUB_has_high:
+        include_iqvia = True
 
     # ==================================================
-    # PROCESS JISB
+    # PROCESS IQVIA
     # ==================================================
 
     if (
-        include_jisb
-        and "jisb" in raw_results
-        and "jisb" not in results
+        include_iqvia
+        and "iqvia" in raw_results
+        and "iqvia" not in results
     ):
-        results["jisb"] = (
-            process_jisb_response(
-                raw_results["jisb"]
+        results["iqvia"] = (
+            process_iqvia_response(
+                raw_results["iqvia"]
             )
         )
 
-        jisb_structured = (
-            results["jisb"]
+        iqvia_structured = (
+            results["iqvia"]
         )
 
     # ==================================================
@@ -1893,13 +1893,13 @@ def lambda_handler(
             response_sent_time=(
                 response_sent_time
             ),
-            ORIEO_original=ORIEO_raw,
-            ORIEO_structured=(
-                ORIEO_structured
+            MDM_HUB_original=MDM_HUB_raw,
+            MDM_HUB_structured=(
+                MDM_HUB_structured
             ),
-            jisb_original=jisb_raw,
-            jisb_structured=(
-                jisb_structured
+            iqvia_original=iqvia_raw,
+            iqvia_structured=(
+                iqvia_structured
             ),
         )
     )
@@ -1918,10 +1918,10 @@ def lambda_handler(
     )
 
     return combined_response(
-        ORIEO_response=results.get(
-            "ORIEO"
+        MDM_HUB_response=results.get(
+            "MDM_HUB"
         ),
-        jisb_response=results.get(
-            "jisb"
+        iqvia_response=results.get(
+            "iqvia"
         ),
     )

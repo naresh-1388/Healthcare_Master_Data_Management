@@ -1,10 +1,10 @@
 """
-ORIEO response transformation.
+MDM_HUB response transformation.
 
 Source of truth:
-    process_orieo_response.py
+    process_mdm_hub_response.py
 
-The function filters ORIEO records using the supplied match score
+The function filters MDM_HUB records using the supplied match score
 and transforms accepted records into the response structure used
 by the SBC flow.
 """
@@ -14,39 +14,53 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-class ORIEOResponseProcessingError(Exception):
-    """Raised when an ORIEO response cannot be processed."""
+class MDM_HUBResponseProcessingError(Exception):
+    """Raised when an MDM_HUB response cannot be processed."""
 
 
 def _get_records(response_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract the list of individual record dicts out of a raw MDM_HUB API
+    response envelope (response_json["searchResult"]["records"]).
+
+    Args:
+        response_json: The parsed JSON body returned by the MDM_HUB API.
+
+    Returns:
+        list[dict]: the records found under searchResult.records (empty
+        list if that key is missing or empty).
+
+    Raises:
+        MDM_HUBResponseProcessingError: if response_json is not a dict.
+    """
     if not isinstance(response_json, dict):
-        raise ORIEOResponseProcessingError(
-            "ORIEO response must be a dictionary."
+        raise MDM_HUBResponseProcessingError(
+            "MDM_HUB response must be a dictionary."
         )
 
     search_result = response_json.get("searchResult") or {}
 
     if not isinstance(search_result, dict):
-        raise ORIEOResponseProcessingError(
-            "ORIEO response contains an invalid searchResult."
+        raise MDM_HUBResponseProcessingError(
+            "MDM_HUB response contains an invalid searchResult."
         )
 
     records = search_result.get("records") or []
 
     if not isinstance(records, list):
-        raise ORIEOResponseProcessingError(
-            "ORIEO searchResult.records must be a list."
+        raise MDM_HUBResponseProcessingError(
+            "MDM_HUB searchResult.records must be a list."
         )
 
     return records
 
 
-def process_orieo_response(
+def process_mdm_hub_response(
     response_json: Dict[str, Any],
     match_score: int,
 ) -> Dict[str, Any]:
     """
-    Filter and transform ORIEO records.
+    Filter and transform MDM_HUB records.
 
     Records with score below match_score are excluded.
     """
@@ -82,7 +96,7 @@ def process_orieo_response(
                 alternate_identifiers = []
 
             transformed = {
-                "orieoid": meta.get(
+                "mdm_hubid": meta.get(
                     "businessId",
                     "",
                 ),
@@ -176,24 +190,24 @@ def process_orieo_response(
             }
         }
 
-    except ORIEOResponseProcessingError:
+    except MDM_HUBResponseProcessingError:
         raise
 
     except Exception as exc:
-        raise ORIEOResponseProcessingError(
-            f"Error processing ORIEO response: {exc}"
+        raise MDM_HUBResponseProcessingError(
+            f"Error processing MDM_HUB response: {exc}"
         ) from exc
 
 
 __all__ = [
-    "ORIEOResponseProcessingError",
-    "process_orieo_response",
+    "MDM_HUBResponseProcessingError",
+    "process_mdm_hub_response",
 ]
 
 # ============================================================================
 # USER CONFIGURATION
 # ============================================================================
 # No credentials, database names, schemas, or paths belong in this parser.
-# It only transforms the ORIEO response structure supplied by the caller.
+# It only transforms the MDM_HUB response structure supplied by the caller.
 # ============================================================================
 

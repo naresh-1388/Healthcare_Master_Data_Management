@@ -1,13 +1,13 @@
 """
-Remove JISB records that are already represented in the ORIEO response.
+Remove IQVIA records that are already represented in the MDM_HUB response.
 
 The duplicate check is based on:
-    ORIEO AlternateIdentifier:
-        alternateIdentifierType.Code == "JISB ID"
+    MDM_HUB AlternateIdentifier:
+        alternateIdentifierType.Code == "IQVIA ID"
 
 against:
 
-    JISB individual.individualEid
+    IQVIA individual.individualEid
 """
 
 from __future__ import annotations
@@ -19,15 +19,15 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def deduplicate_jisb_records(
-    orieo_response: dict[str, Any],
-    jisb_response: dict[str, Any],
+def deduplicate_iqvia_records(
+    mdm_hub_response: dict[str, Any],
+    iqvia_response: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    Remove JISB records whose individualEid already exists as a
-    JISB ID in the ORIEO response.
+    Remove IQVIA records whose individualEid already exists as a
+    IQVIA ID in the MDM_HUB response.
 
-    The JISB response is returned with:
+    The IQVIA response is returned with:
         response.results
         response.resultSize
         response.totalNumberOfResults
@@ -35,16 +35,16 @@ def deduplicate_jisb_records(
     updated after duplicate removal.
     """
     try:
-        orieo_records = (
-            orieo_response
+        mdm_hub_records = (
+            mdm_hub_response
             .get("searchResult", {})
             .get("records", [])
             or []
         )
 
-        orieo_jisb_ids: set[Any] = set()
+        mdm_hub_iqvia_ids: set[Any] = set()
 
-        for record in orieo_records:
+        for record in mdm_hub_records:
             data = record.get("data", {}) or {}
 
             alternate_identifiers = (
@@ -65,24 +65,24 @@ def deduplicate_jisb_records(
 
                 if (
                     identifier_type
-                    and identifier_type.strip().upper() == "JISB ID"
+                    and identifier_type.strip().upper() == "IQVIA ID"
                     and identifier_value
                 ):
-                    orieo_jisb_ids.add(identifier_value)
+                    mdm_hub_iqvia_ids.add(identifier_value)
 
         logger.info(
-            "Extracted %d JISB IDs from ORIEO response",
-            len(orieo_jisb_ids),
+            "Extracted %d IQVIA IDs from MDM_HUB response",
+            len(mdm_hub_iqvia_ids),
         )
 
         response_block = (
-            jisb_response.get("response", {}) or {}
+            iqvia_response.get("response", {}) or {}
         )
 
         results = response_block.get("results", []) or []
 
         logger.info(
-            "JISB records before filtering: %d",
+            "IQVIA records before filtering: %d",
             len(results),
         )
 
@@ -96,10 +96,10 @@ def deduplicate_jisb_records(
 
             if (
                 individual_eid
-                and individual_eid in orieo_jisb_ids
+                and individual_eid in mdm_hub_iqvia_ids
             ):
                 logger.info(
-                    "Removing duplicate JISB record: %s",
+                    "Removing duplicate IQVIA record: %s",
                     individual_eid,
                 )
                 continue
@@ -107,7 +107,7 @@ def deduplicate_jisb_records(
             filtered_results.append(result)
 
         logger.info(
-            "JISB records after filtering: %d",
+            "IQVIA records after filtering: %d",
             len(filtered_results),
         )
 
@@ -117,20 +117,20 @@ def deduplicate_jisb_records(
             filtered_results
         )
 
-        jisb_response["response"] = response_block
+        iqvia_response["response"] = response_block
 
-        return jisb_response
+        return iqvia_response
 
     except Exception:
         logger.exception(
-            "Error during JISB deduplication"
+            "Error during IQVIA deduplication"
         )
-        return jisb_response
+        return iqvia_response
 
 # ============================================================================
 # USER CONFIGURATION
 # ============================================================================
 # No credentials or database configuration belongs in this pure transformation.
-# The caller supplies the JISB and ORIEO response objects.
+# The caller supplies the IQVIA and MDM_HUB response objects.
 # ============================================================================
 

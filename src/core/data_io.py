@@ -22,8 +22,18 @@ try:
     from delta.tables import DeltaTable
 except ImportError:
     class DeltaTable:
+        """
+        Minimal stand-in for delta.tables.DeltaTable used only when the
+        delta-spark package is not installed (e.g. local unit tests
+        outside a Databricks/Delta runtime). isDeltaTable() always
+        reports False in that case, which safely routes read_data_dynamic
+        into the plain file-format detection path instead of assuming
+        Delta.
+        """
+
         @staticmethod
         def isDeltaTable(spark, path):
+            """Always False outside a real Delta Lake runtime."""
             return False
 
 try:
@@ -36,17 +46,34 @@ class DBFSFile:
     """Lightweight representation of a DBFS file."""
 
     def __init__(self, name, path):
+        """
+        Args:
+            name: The file's base name (as returned by dbutils.fs.ls).
+            path: The file's full DBFS path.
+        """
         self.name = name
         self.path = path
 
 
 def get_dbutils():
     """
-    Return Databricks dbutils from Spark or IPython context.
+    Locate and return the Databricks ``dbutils`` object, regardless of
+    whether the code is running as a notebook (where ``dbutils`` is
+    injected into the IPython user namespace) or as a plain Python module
+    that only has access to the SparkSession.
+
+    Returns:
+        The dbutils object if it can be found, otherwise None (callers
+        must handle the None case, e.g. when running in a local/unit-test
+        environment that has no Databricks runtime).
     """
+    # First choice: dbutils attached directly to the SparkSession.
     if "spark" in globals() and hasattr(spark, "dbutils"):
         return spark.dbutils
 
+    # Fallback: pull dbutils out of the notebook's IPython namespace.
+    # This is needed because dbutils is a notebook-injected global and is
+    # not always reachable via the SparkSession object itself.
     try:
         import IPython
 
@@ -61,7 +88,17 @@ def get_dbutils():
 
 def file_exists(path: str) -> bool:
     """
-    Check whether a DBFS path contains files.
+    Check whether a given DBFS/cloud storage path exists and contains at
+    least one file.
+
+    Args:
+        path: The DBFS (or mounted cloud storage) path to check.
+
+    Returns:
+        bool: True if the path can be listed and contains one or more
+        entries; False if dbutils is unavailable, the path does not exist,
+        or the listing raises any error (deliberately fails "closed" so a
+        missing path never crashes the calling pipeline stage).
     """
     dbutils_local = get_dbutils()
 
@@ -82,9 +119,29 @@ def send_email(
     smtp_user,
 ):
     """
-    Send an email notification using the configured SMTP server.
+    Send a plain-text alert email via SMTP (used for pipeline
+    success/failure notifications).
+
+    Args:
+        subject: Email subject. May be passed as a list of strings, in
+            which case the parts are joined with a single space.
+        body: Email body. May be passed as a list of strings (e.g. one
+            line per error), in which case the parts are joined with
+            newlines.
+        to_email: A single recipient address, or a list of addresses.
+        smtp_server: Hostname of the SMTP relay to send through.
+        smtp_user: The "From" address / SMTP auth user. May be passed as a
+            list, in which case only the first entry is used.
+
+    Returns:
+        None. Success or failure is only reported via print statements -
+        this function intentionally never raises, so a failed notification
+        can never bring down the pipeline run that triggered it.
     """
 
+    # Normalise list-shaped inputs (some callers build these dynamically
+    # from control-table rows) down to the plain strings the email
+    # library expects.
     if isinstance(subject, list):
         subject = " ".join(map(str, subject))
 

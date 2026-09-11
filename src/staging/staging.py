@@ -55,6 +55,14 @@ class StagingProcessingError(Exception):
 
 
 def _required_columns(df: DataFrame, columns: list[str]) -> None:
+    """
+    Assert that every column in `columns` is present on `df`.
+
+    Raises:
+        StagingProcessingError: listing every missing column, so a
+        Landing-schema drift is caught immediately instead of failing
+        later with a confusing "column not found" Spark error.
+    """
     missing = [c for c in columns if c not in df.columns]
     if missing:
         raise StagingProcessingError(
@@ -115,6 +123,18 @@ def transform_hcp_name(landing_df: DataFrame) -> DataFrame:
 
 
 def get_pending_batches(source_system_name: str) -> list[int]:
+    """
+    Look up every batch_id that has completed the upstream stage (DQ) but
+    not yet the staging stage itself, using the shared batch-status filter
+    from runtime_config, so this module only ever processes new work.
+
+    Args:
+        source_system_name: The source system to filter the batch control
+            table on.
+
+    Returns:
+        list[int]: pending batch IDs, in ascending order (oldest first).
+    """
     condition = get_batch_status_filter("staging", source_system_name)
 
     rows = (

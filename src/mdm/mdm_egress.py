@@ -44,12 +44,23 @@ except ImportError:
 # ---------------------------------------------------------------------
 
 def _require_spark(spark: SparkSession) -> SparkSession:
+    """Validate that a SparkSession was actually passed in, since every
+    egress operation needs one to read/write Delta tables."""
     if spark is None:
         raise ValueError("spark session is required")
     return spark
 
 
 def _table_exists(spark: SparkSession, table_name: str) -> bool:
+    """
+    Check whether a fully-qualified table exists, preferring the fast
+    catalog API and falling back to a DESCRIBE TABLE probe for catalogs/
+    versions where tableExists() is unreliable.
+
+    Returns:
+        bool: True if the table can be found by either method, False if
+        neither succeeds (never raises).
+    """
     try:
         return spark.catalog.tableExists(table_name)
     except Exception:

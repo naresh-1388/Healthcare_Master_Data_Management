@@ -1,0 +1,15 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR) and fill in real
+# credentials via environment variables - never commit real credentials.
+healthcare_mdm:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'HMDM_DEV_ROLE') }}"
+      database: HMDM_DEV
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'HMDM_WH') }}"
+      schema: STAGING
+      threads: 4

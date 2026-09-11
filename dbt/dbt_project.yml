@@ -1,0 +1,35 @@
+# ============================================================
+# Healthcare_Master_Data_Management - dbt project configuration
+#
+# Scope: this dbt project models the STAGING -> MDM -> MASTER portion of
+# the pipeline on Snowflake (see snowflake/04_create_staging_tables.sql
+# onward). The earlier RAW -> LANDING -> STAGING stages are heavy,
+# stateful Spark/Delta jobs (batch control, DQ rule execution, surrogate
+# key generation) and stay in Databricks (see src/ and Databricks/) rather
+# than being reimplemented as dbt SQL models - this project intentionally
+# picks up the pipeline where it becomes pure SQL transformation.
+# ============================================================
+name: 'healthcare_mdm'
+version: '1.0.0'
+config-version: 2
+
+profile: 'healthcare_mdm'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  healthcare_mdm:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: mdm
