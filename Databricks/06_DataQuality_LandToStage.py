@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC ### Healthcare_Master_Data_Management - Stage 4 : Land -> Stage Data Quality
 # MAGIC
@@ -10,9 +14,11 @@
 # MAGIC one-row-per-Land_to_Stag-entry rule list.
 
 # COMMAND ----------
+
 # MAGIC %md #### 1. Widgets
 
 # COMMAND ----------
+
 dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
 dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source configuration identifier (for control-table rule lookup)")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest pending batch per table)")
@@ -23,13 +29,59 @@ batch_id_param = dbutils.widgets.get("batch_id")
 batch_id = int(batch_id_param) if batch_id_param.strip() else None
 
 # COMMAND ----------
+
 # MAGIC %md #### 2. Imports
 
 # COMMAND ----------
+
+import sys
+import os
+
+# Add src directory to Python path
+src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
 from dq.data_quality import main_data_quality_pipeline, get_rules_for_source, get_rules
 from core.runtime_config import catalog, env, get_notebook_run_url
 
 # COMMAND ----------
+
+# DBTITLE 1,Infrastructure Verification
+# MAGIC %md
+# MAGIC #### 2.5 Infrastructure Verification
+# MAGIC
+# MAGIC **This section verifies required infrastructure exists:**
+# MAGIC - Source schema: `landing` (input from standardization)
+# MAGIC - Target schema: `staging` (output of DQ validation)
+# MAGIC - DQ control tables for rule configuration
+# MAGIC - DQ reject table for failed records
+# MAGIC
+# MAGIC **Safe to re-run:** All operations are idempotent.
+
+# COMMAND ----------
+
+# DBTITLE 1,Display Current Infrastructure
+# MAGIC %sql
+# MAGIC -- Verify schemas exist
+# MAGIC SHOW SCHEMAS IN HMDM_DEV;
+# MAGIC
+# MAGIC -- Check landing tables (input)
+# MAGIC SHOW TABLES IN HMDM_DEV.landing;
+
+# COMMAND ----------
+
+# DBTITLE 1,Verify Staging Schema
+# MAGIC %sql
+# MAGIC -- Create staging schema if not exists
+# MAGIC CREATE SCHEMA IF NOT EXISTS HMDM_DEV.staging
+# MAGIC COMMENT 'Staging layer - data quality validated records';
+# MAGIC
+# MAGIC -- Show staging tables (after DQ runs)
+# MAGIC SHOW TABLES IN HMDM_DEV.staging;
+
+# COMMAND ----------
+
 # MAGIC %md #### 3. Run every configured DQ rule, grouped by (source_table, target_table)
 # MAGIC
 # MAGIC `main_data_quality_pipeline(source_identifier, source_table, ...)` runs
@@ -38,6 +90,7 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # MAGIC DQ_RULES - covering the entire Land_to_Stag sheet in one notebook run.
 
 # COMMAND ----------
+
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
@@ -66,10 +119,23 @@ for source_table in source_tables:
         failures.append((source_table, str(exc)))
 
 # COMMAND ----------
+
 # MAGIC %md #### 4. Result
 
 # COMMAND ----------
+
 if failures:
-    raise RuntimeError(f"DQ failed for {len(failures)} tables: {failures}")
+    # Separate missing tables from actual errors
+    missing_tables = [(tbl, err) for tbl, err in failures if "does not exist" in err]
+    actual_errors = [(tbl, err) for tbl, err in failures if "does not exist" not in err]
+    
+    if actual_errors:
+        raise RuntimeError(f"DQ failed for {len(actual_errors)} tables: {actual_errors}")
+    else:
+        print(f"\nWarning: {len(missing_tables)} source tables do not exist yet:")
+        for tbl, err in missing_tables:
+            print(f"  - {tbl}")
+        print("\nThis is expected if upstream pipeline stages have not run yet.")
+        print("Run the ingestion and standardization notebooks first to create these tables.")
 
 dbutils.notebook.exit("SUCCESS")

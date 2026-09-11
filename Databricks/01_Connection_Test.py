@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC ### Healthcare_Master_Data_Management — Connection Validations
 # MAGIC
@@ -115,16 +119,24 @@ print("Healthcare_MDM runtime configuration: SUCCESS")
 
 # COMMAND ----------
 
+# DBTITLE 1,Databricks Infrastructure Check
+# MAGIC %sql
+# MAGIC -- Verify Databricks catalog and schemas exist
+# MAGIC SHOW CATALOGS;
+# MAGIC SHOW SCHEMAS IN HMDM_DEV;
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC
 # MAGIC | Validation | Status |
 # MAGIC |---|---|
-# MAGIC | Databricks / Spark | ✅ PASS |
-# MAGIC | AWS Secrets Manager | ✅ PASS |
-# MAGIC | Snowflake credentials retrieval | ✅ PASS |
-# MAGIC | Snowflake READ | ✅ PASS |
-# MAGIC | Snowflake WRITE | ✅ PASS |
-# MAGIC | Healthcare_MDM runtime configuration | ✅ PASS |
+# MAGIC | Databricks / Spark | PASS |
+# MAGIC | AWS Secrets Manager | PASS |
+# MAGIC | Snowflake credentials retrieval | PASS |
+# MAGIC | Snowflake READ | PASS |
+# MAGIC | Snowflake WRITE | PASS |
+# MAGIC | Healthcare_MDM runtime configuration | PASS |
 # MAGIC
 # MAGIC
 # MAGIC

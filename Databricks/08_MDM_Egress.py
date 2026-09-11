@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC ### Healthcare_Master_Data_Management - Stage 6 : MDM Egress (HCP Master + HCO Master)
 # MAGIC
@@ -9,9 +13,11 @@
 # MAGIC sheets.
 
 # COMMAND ----------
+
 # MAGIC %md #### 1. Widgets
 
 # COMMAND ----------
+
 dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
 dbutils.widgets.dropdown("entity_type", "HCP", ["HCP", "HCO"], "Entity type to egress")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest eligible batch)")
@@ -43,16 +49,69 @@ HCO_EGRESS_GROUPS = [
 egress_groups = HCP_EGRESS_GROUPS if entity_type == "HCP" else HCO_EGRESS_GROUPS
 
 # COMMAND ----------
+
 # MAGIC %md #### 2. Imports
 
 # COMMAND ----------
+
+import sys
+import os
+import importlib
+
+# Add src directory to Python path
+src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+# Reload modules to pick up changes
+if 'mdm.mdm_egress' in sys.modules:
+    importlib.reload(sys.modules['mdm.mdm_egress'])
+if 'core.runtime_config' in sys.modules:
+    importlib.reload(sys.modules['core.runtime_config'])
+
 from mdm.mdm_egress import main_pipeline as run_mdm_egress
 from core.runtime_config import catalog, env, get_notebook_run_url
 
 # COMMAND ----------
+
+# DBTITLE 1,Infrastructure Verification
+# MAGIC %md
+# MAGIC #### 2.5 Infrastructure Verification
+# MAGIC
+# MAGIC **This section verifies required infrastructure exists:**
+# MAGIC - Source schema: `mdm` (input from MDM ingress)
+# MAGIC - Target schema: `master` (egress/consumption layer)
+# MAGIC - Master tables for downstream consumption
+# MAGIC
+# MAGIC **Safe to re-run:** All operations are idempotent.
+
+# COMMAND ----------
+
+# DBTITLE 1,Display Current Infrastructure
+# MAGIC %sql
+# MAGIC -- Verify schemas exist
+# MAGIC SHOW SCHEMAS IN HMDM_DEV;
+# MAGIC
+# MAGIC -- Check MDM tables (input)
+# MAGIC SHOW TABLES IN HMDM_DEV.mdm;
+
+# COMMAND ----------
+
+# DBTITLE 1,Verify Master Schema
+# MAGIC %sql
+# MAGIC -- Create MASTER schema if not exists
+# MAGIC CREATE SCHEMA IF NOT EXISTS HMDM_DEV.master
+# MAGIC COMMENT 'Master layer - golden records for consumption';
+# MAGIC
+# MAGIC -- Show MASTER tables (after egress runs)
+# MAGIC SHOW TABLES IN HMDM_DEV.master;
+
+# COMMAND ----------
+
 # MAGIC %md #### 3. Run egress for every configured group
 
 # COMMAND ----------
+
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
@@ -76,9 +135,11 @@ for source_table, target_table in egress_groups:
         failures.append((source_table, str(exc)))
 
 # COMMAND ----------
+
 # MAGIC %md #### 4. Result
 
 # COMMAND ----------
+
 if failures:
     raise RuntimeError(f"MDM Egress failed for {len(failures)} groups: {failures}")
 

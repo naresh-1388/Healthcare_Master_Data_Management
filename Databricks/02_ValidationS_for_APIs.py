@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # ============================================================
 # INITIALIZATION — SOURCE PATH AND COMMON IMPORTS
 # ============================================================
@@ -47,6 +51,57 @@ importlib.reload(runtime_config)
 print("Healthcare_MDM source path:", SRC_ROOT)
 print("Common project imports: PASS")
 
+
+# COMMAND ----------
+
+# DBTITLE 1,Infrastructure Verification for Tests
+# MAGIC %md
+# MAGIC # Infrastructure Verification
+# MAGIC
+# MAGIC **This section verifies that required test infrastructure exists:**
+# MAGIC - Test schemas: `staging`, `util`
+# MAGIC - Test tables: DQ test table, control tables
+# MAGIC - Test data: TEST_HCP records
+# MAGIC
+# MAGIC **Safe to re-run:** All checks and creation statements are idempotent.
+
+# COMMAND ----------
+
+# DBTITLE 1,Display Test Infrastructure
+# MAGIC %sql
+# MAGIC -- Display all schemas in catalog
+# MAGIC SHOW SCHEMAS IN HMDM_DEV;
+# MAGIC
+# MAGIC -- Display control tables in util schema
+# MAGIC SHOW TABLES IN HMDM_DEV.util;
+
+# COMMAND ----------
+
+# DBTITLE 1,Verify Test Data Tables Exist
+# Verify required test infrastructure
+required_test_tables = [
+    "HMDM_DEV.staging.hcp_name_dq_test",  # DQ test table
+    "HMDM_DEV.util.ctl_batch_log_tbl",    # Batch control
+    "HMDM_DEV.util.ctl_log_tbl",           # Audit log
+    "HMDM_DEV.util.ctl_dqm_log_tbl",       # DQ log
+    "HMDM_DEV.util.dqm_reject_tbl",        # DQ reject
+]
+
+print("Checking test infrastructure...\n")
+
+missing_tables = []
+for table in required_test_tables:
+    exists = spark.catalog.tableExists(table)
+    status = "EXISTS" if exists else "MISSING"
+    print(f"{status}: {table}")
+    if not exists:
+        missing_tables.append(table)
+
+if missing_tables:
+    print(f"\nWarning: {len(missing_tables)} table(s) missing.")
+    print("Some tests may fail. Run setup notebooks first to create test data.")
+else:
+    print("\nAll required test infrastructure exists!")
 
 # COMMAND ----------
 

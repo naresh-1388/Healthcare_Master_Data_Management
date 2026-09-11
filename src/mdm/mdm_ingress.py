@@ -167,7 +167,10 @@ def get_pending_ingress_batches(
         ingress_status != Y
     """
 
-    from ..core.runtime_config import batch_log_tbl
+    try:
+        from ..core.runtime_config import batch_log_tbl
+    except ImportError:
+        from core.runtime_config import batch_log_tbl
 
     condition = get_batch_status_filter(
         INGRESS_MODULE,

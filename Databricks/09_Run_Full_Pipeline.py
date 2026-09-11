@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC ### Healthcare_Master_Data_Management - Full Pipeline Orchestrator
 # MAGIC
@@ -21,9 +25,11 @@
 # MAGIC 8. `08_MDM_Egress` (HCO)          (MDM.HCO -> HCO Master/downstream)
 
 # COMMAND ----------
+
 # MAGIC %md #### 1. Widgets
 
 # COMMAND ----------
+
 dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = auto-detect pending batch at each stage)")
 dbutils.widgets.text("stage_timeout_seconds", "3600", "Per-stage timeout (seconds)")
@@ -33,6 +39,7 @@ batch_id = dbutils.widgets.get("batch_id")
 timeout = int(dbutils.widgets.get("stage_timeout_seconds"))
 
 # COMMAND ----------
+
 # MAGIC %md #### 2. Run every stage in order
 # MAGIC
 # MAGIC Each `dbutils.notebook.run()` call executes that notebook as an isolated
@@ -42,47 +49,52 @@ timeout = int(dbutils.widgets.get("stage_timeout_seconds"))
 # MAGIC into a stage whose input was never produced.
 
 # COMMAND ----------
-common_params = {"source_system_name": source_system_name, "batch_id": batch_id}
+
+# DBTITLE 1,Run pipeline stages
+# Base path for all pipeline notebooks
+base_path = "/Users/naresh.mayari@gmail.com/Healthcare_Master_Data_Management/Databricks"
 
 print("STAGE 1/6: Source -> Raw ingestion")
-dbutils.notebook.run("03_Ingestion_SrcToRaw", timeout, common_params)
+dbutils.notebook.run(f"{base_path}/03_Ingestion_SrcToRaw", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 2/6: Raw -> Landing standardization")
-dbutils.notebook.run("04_Standardization_RawToLand", timeout, common_params)
+dbutils.notebook.run(f"{base_path}/04_Standardization_RawToLand", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 3/6: Canonical standardization")
-dbutils.notebook.run("05_Canonical_Standardization", timeout, {})
+dbutils.notebook.run(f"{base_path}/05_Canonical_Standardization", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 4/6: Landing -> Staging data quality")
 dbutils.notebook.run(
-    "06_DataQuality_LandToStage",
+    f"{base_path}/06_DataQuality_LandToStage",
     timeout,
-    {"source_system_name": source_system_name, "batch_id": batch_id, "source_identifier": "IQVIA_HMDM"},
+    {"source_system_name": source_system_name, "source_identifiers": ""},
 )
 
 print("STAGE 5/6: MDM Ingress (HCP, then HCO)")
 dbutils.notebook.run(
-    "07_MDM_Ingress", timeout,
-    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCP"},
+    f"{base_path}/07_MDM_Ingress", timeout,
+    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCP"},
 )
 dbutils.notebook.run(
-    "07_MDM_Ingress", timeout,
-    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCO"},
+    f"{base_path}/07_MDM_Ingress", timeout,
+    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCO"},
 )
 
 print("STAGE 6/6: MDM Egress (HCP Master, then HCO Master)")
 dbutils.notebook.run(
-    "08_MDM_Egress", timeout,
-    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCP"},
+    f"{base_path}/08_MDM_Egress", timeout,
+    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCP"},
 )
 dbutils.notebook.run(
-    "08_MDM_Egress", timeout,
-    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCO"},
+    f"{base_path}/08_MDM_Egress", timeout,
+    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCO"},
 )
 
 # COMMAND ----------
+
 # MAGIC %md #### 3. Result
 
 # COMMAND ----------
+
 print("Full pipeline completed successfully.")
 dbutils.notebook.exit("SUCCESS")
