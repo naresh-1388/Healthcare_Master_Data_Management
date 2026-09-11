@@ -1,0 +1,1 @@
+"""Configuration placeholder for the mock Healthcare MDM API app (currently unused - the app runs with FastAPI defaults; add settings here if the mock API needs its own config, e.g. a port or sample-data file path)."""

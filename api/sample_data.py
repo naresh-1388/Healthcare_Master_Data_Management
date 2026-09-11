@@ -1,3 +1,5 @@
+"""Fixed sample HCP/HCO payloads served by the mock API routes (routes/hcp.py, routes/hco.py) for local development and testing without live IQVIA credentials."""
+
 from models import (
     Individual,
     AlternativeName,

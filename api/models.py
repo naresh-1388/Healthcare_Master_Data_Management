@@ -1,3 +1,5 @@
+"""Pydantic request/response models for the mock Healthcare MDM API, shaped to mirror the real IQVIA individual/organization API payloads closely enough for local development and testing."""
+
 from typing import List, Optional
 from pydantic import BaseModel
 
