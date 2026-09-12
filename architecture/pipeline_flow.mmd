@@ -1,0 +1,20 @@
+%% Healthcare_Master_Data_Management - pipeline data flow
+%% Render with the Mermaid CLI or any Mermaid-compatible viewer.
+%% Mirrors docs/ARCHITECTURE.md and the HMDM_DEV_Cleaned.xlsx workbook.
+
+flowchart TD
+    IQVIA[IQVIA Source API / Files] --> RAW[(RAW layer\nSource_Raw sheet)]
+    RAW --> LAND[(LANDING layer\nRaw_to_Land sheet)]
+    LAND --> CANON[Canonical standardization]
+    CANON --> STAGE[(STAGING layer\nLand_to_Stag sheet + DQ rules)]
+    STAGE -->|Stg_MDM_Ingress-HCP| MDM_HCP[(MDM.HCP)]
+    STAGE -->|Stg_MDM_Ingress-HCO| MDM_HCO[(MDM.HCO + HCO_NAME/PHONE/SPECIALTY/ALT_ID)]
+    MDM_HCP -->|Informatica hub-derived child objects| MDM_HCP_CHILD[(MDM.HCP_SPECIALTY / ALTERNATE_NAME / LICENSE / THERAPEUTIC_AREA)]
+    MDM_HCP --> EGRESS_HCP[(MASTER.HCP\nMDM_HUB_Egress-HCP_Master)]
+    MDM_HCP_CHILD --> EGRESS_HCP
+    MDM_HCO --> EGRESS_HCO[(MASTER.HCO*\nMDM_HUB_Egress-HCO_Master)]
+
+    IQVIA -.->|real-time Search-Before-Create| SBC[src/api/sbc.py]
+    SBC -.-> MDM_HCP
+    IQVIA -.->|Lambda bridge, incl. Licenses| DL[src/api/download_api.py]
+    DL -.-> MDM_HCP

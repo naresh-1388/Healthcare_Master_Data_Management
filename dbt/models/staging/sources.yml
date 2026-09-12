@@ -1,0 +1,54 @@
+version: 2
+
+sources:
+  - name: staging
+    description: >
+      STAGING-layer Delta tables (mirrored into Snowflake), written by the
+      Databricks Land_to_Stage job (src/dq/data_quality.py) after DQ rules
+      have been applied. See the Land_to_Stag sheet of the HMDM_DEV mapping
+      workbook for the full rule-to-table mapping.
+    database: HMDM_DEV
+    schema: STAGING
+    tables:
+      - name: HCO_ADDRESS
+      - name: HCO_ALTERNATE_NAME
+      - name: HCO_EMAIL
+      - name: HCO_HIERARCHY
+      - name: HCO_IDENTIFICATION
+      - name: HCO_NAME
+      - name: HCO_PHONE
+      - name: HCO_SPECIALTY
+      - name: HCO_TAX
+      - name: HCP_ADDRESS
+      - name: HCP_ALTERNATE_NAME
+      - name: HCP_EDUCATION
+      - name: HCP_EMAIL
+      - name: HCP_HCO_AFFILIATION
+      - name: HCP_IDENTIFICATION
+      - name: HCP_LANGUAGE
+      - name: HCP_LICENSE
+      - name: HCP_NAME
+      - name: HCP_ORIGIN_UNIVERSITY
+      - name: HCP_PHONE
+      - name: HCP_SPECIALTY
+      - name: HCP_TAX
+      - name: HCP_TENDENCIES
+
+  - name: mdm_hub
+    description: >
+      Tables exposed directly by the Informatica MDM hub engine itself
+      (not built by this dbt project or the Databricks ingress job). The
+      hub auto-derives these child/history objects from the multi-valued
+      attributes landed on the flat MDM.HCP base object by
+      src/mdm/mdm_ingress.py - see the "#3/#9 Architecture pattern" row of
+      the Audit_Trail_Log sheet in the HMDM_DEV mapping workbook for the
+      full explanation. Connect this source to however your environment
+      exposes the Informatica hub tables (a Snowflake external table, a
+      federated query, or a periodic export job).
+    database: HMDM_DEV
+    schema: MDM
+    tables:
+      - name: hcp_specialty
+      - name: hcp_alternate_name
+      - name: hcp_therapeutic_area
+      - name: hcp_license

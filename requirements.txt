@@ -1,0 +1,32 @@
+# ============================================================
+# Healthcare_Master_Data_Management - Python dependencies
+#
+# pyspark/delta-spark are only needed for running src/ modules OUTSIDE
+# Databricks (e.g. local unit tests) - on an actual Databricks cluster
+# these are already provided by the Databricks Runtime and should be
+# left off the cluster library list to avoid version conflicts.
+# ============================================================
+
+# --- Core pipeline (src/) ---
+pyspark==3.5.*
+delta-spark==3.1.*
+
+# --- Real-time API integration (src/api/, api/) ---
+boto3==1.34.*
+requests==2.31.*
+fastapi==0.111.*
+uvicorn==0.30.*
+pydantic==2.7.*
+
+# --- dbt (Staging -> MDM -> Master modelling on Snowflake) ---
+dbt-core==1.8.*
+dbt-snowflake==1.8.*
+
+# --- Airflow (optional - only needed if orchestrating via Airflow rather
+# than native Databricks Workflows) ---
+apache-airflow==2.9.*
+apache-airflow-providers-databricks==6.5.*
+
+# --- Testing ---
+pytest==8.2.*
+pytest-mock==3.14.*
