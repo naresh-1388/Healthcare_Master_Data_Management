@@ -54,7 +54,7 @@ print("Snowflake credentials retrieved: SUCCESS")
 # Snowflake read connectivity
 # Validate the development Snowflake environment with secret-derived credentials.
 sf_options = {
-    "sfURL": "NKCBAHB-LP28187.snowflakecomputing.com",
+    "sfURL": "AXIVKAP-PF58156.snowflakecomputing.com",
     "sfUser": sf_user,
     "sfPassword": sf_password,
     "sfDatabase": "HMDM_DEV",
@@ -78,7 +78,7 @@ print("Snowflake READ connection: SUCCESS")
 # Snowflake write connectivity
 # Validate write access with a dedicated connectivity-test object.
 sf_options_write = {
-    "host": "NKCBAHB-LP28187.snowflakecomputing.com",
+    "host": "AXIVKAP-PF58156.snowflakecomputing.com",
     "sfUser": sf_user,
     "sfPassword": sf_password,
     "sfDatabase": "HMDM_DEV",
