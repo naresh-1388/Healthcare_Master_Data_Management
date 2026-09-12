@@ -19,7 +19,7 @@ import importlib
 from pathlib import Path
 
 REPO_ROOT = Path(
-    "/Workspace/Users/naresh.mayari@gmail.com/Healthcare_Master_Data_Management"
+    "/Workspace/Repos/naresh.mayari@gmail.com/Healthcare_Master_Data_Management"
 )
 SRC_ROOT = REPO_ROOT / "src"
 

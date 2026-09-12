@@ -100,7 +100,7 @@ print("Snowflake WRITE connection: SUCCESS")
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path("/Workspace/Users/naresh.mayari@gmail.com/Healthcare_Master_Data_Management")
+REPO_ROOT = Path("/Workspace/Repos/naresh.mayari@gmail.com/Healthcare_Master_Data_Management")
 if str(REPO_ROOT) in sys.path:
     sys.path.remove(str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT))
