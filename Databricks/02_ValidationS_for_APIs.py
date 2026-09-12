@@ -129,7 +129,6 @@ assert runtime_config.util_schema == "HMDM_DEV.util"
 
 print("\nRuntime configuration check: PASS")
 
-
 # COMMAND ----------
 
 # ============================================================
@@ -559,10 +558,3 @@ print("\nTEST 7 — MDM_HUB transformation verification: PASS")
 # MAGIC
 # MAGIC **Next step after Test 7:** review the complete notebook execution from the first cell through Test 7. Only after that should we finalize the notebook and move to the remaining project implementation work.
 # MAGIC
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
