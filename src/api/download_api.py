@@ -32,7 +32,7 @@ API_KEY = os.getenv("api_key")
 BASE_MDM_HUB_URL = os.getenv("base_MDM_HUB_url")  # Deployment-supplied.
 IQVIA_URL = os.getenv("iqvia_url")  # Deployment-supplied.
 REGION_NAME = os.getenv("region", "us-east-1")
-SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-credentials")
+SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
 
 logger = logging.getLogger("Download_API")
 logger.setLevel(logging.INFO)
@@ -76,7 +76,7 @@ def load_runtime_credentials() -> None:
     BASE_MDM_HUB_URL = os.getenv("base_MDM_HUB_url")
     IQVIA_URL = os.getenv("iqvia_url")
     REGION_NAME = os.getenv("region", "us-east-1")
-    SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-credentials")
+    SECRET_NAME = os.getenv("secret_name", "healthcare-mdm/dev/api-snowflake")
 
     secret = get_secret(SECRET_NAME, REGION_NAME)
     MDM_HUB_USERNAME = secret.get("username")

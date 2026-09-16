@@ -35,6 +35,7 @@ print("Region: us-east-1")
 
 # COMMAND ----------
 
+# DBTITLE 1,Cell 4
 # Retrieve Snowflake credentials from AWS Secrets Manager
 # The username/password are loaded only into memory. Never print the secret.
 import json
