@@ -141,3 +141,22 @@ if failures:
     raise RuntimeError(f"Ingestion failed for {len(failures)} entities: {failures}")
 
 dbutils.notebook.exit("SUCCESS")
+
+# COMMAND ----------
+
+# DBTITLE 1,Test API Call
+import requests
+
+url = "https://i7h6djmqxr3ycp37bixpxup7cu0cfwyr.lambda-url.us-east-1.on.aws/"
+headers = {
+    "Authorization": "Bearer a7f31c9e2b4d8a1f6c0e93b71d5f8a2c4e6b9d103f72ac81",
+    "Content-Type": "application/json"
+}
+payload = {
+    "mdmEntityType": "HCP",
+    "iqviaId": "W12345678"
+}
+
+response = requests.post(url, headers=headers, json=payload)
+print(f"Status Code: {response.status_code}")
+print(f"Response: {response.text}")
