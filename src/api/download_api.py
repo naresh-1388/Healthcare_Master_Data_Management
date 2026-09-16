@@ -13,6 +13,7 @@ externalId routing:
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -225,11 +226,18 @@ def call_api_with_retry(
                     mdm_hub_id,
                 )
 
-                # Endpoint intentionally preserved from supplied
-                # source as a deployment-supplied value.
+                # BUGFIX: this was a literal "XXXX..." placeholder -
+                # never a real URL. Built from the same `url` (base MDM
+                # Hub URL) already passed into this function, with the
+                # login path suffix overridable via env var in case your
+                # real Informatica MDM Hub uses a different path than the
+                # common SIF default.
+                mdm_hub_login_url = (
+                    f"{url}{os.getenv('MDM_HUB_LOGIN_PATH', '/security/login')}"
+                )
                 session_response = requests.request(
                     "POST",
-                    "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                    mdm_hub_login_url,
                     headers={
                         "Accept": CONTENT_TYPE,
                         "Content-Type": CONTENT_TYPE,
@@ -285,11 +293,20 @@ def call_api_with_retry(
                 iqvia_id,
             )
 
+            # BUGFIX: this was a literal "XXXX..." placeholder - never a
+            # real auth header. Built as HTTP Basic Auth from the
+            # IQVIA_USERNAME/IQVIA_PASSWORD already loaded from Secrets
+            # Manager (see load_runtime_credentials()). If your real
+            # IQVIA contract uses Bearer-token auth instead, swap this
+            # for `f"Bearer {IQVIA_PASSWORD}"` (or whatever token field
+            # your IQVIA subscription actually issues).
+            iqvia_basic_auth = base64.b64encode(
+                f"{IQVIA_USERNAME}:{IQVIA_PASSWORD}".encode()
+            ).decode()
+
             iqvia_headers = {
                 "Content-Type": CONTENT_TYPE,
-                "Authorization": (
-                    "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                ),
+                "Authorization": f"Basic {iqvia_basic_auth}",
             }
 
             if not iqvia_id or len(iqvia_id) < 3:
@@ -1534,9 +1551,15 @@ def post_mdm_hub_entity(
 ) -> dict[str, Any]:
     """Create an MDM_HUB entity using a IQVIA source key."""
     try:
+        # BUGFIX: this was a literal "XXXX..." placeholder - same fix as
+        # the one in call_api_with_retry() above, using this function's
+        # own `base_url` parameter.
+        mdm_hub_login_url = (
+            f"{base_url}{os.getenv('MDM_HUB_LOGIN_PATH', '/security/login')}"
+        )
         session_response = requests.request(
             "POST",
-            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            mdm_hub_login_url,
             headers={
                 "Accept": CONTENT_TYPE,
                 "Content-Type": CONTENT_TYPE,
