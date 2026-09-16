@@ -258,8 +258,11 @@ class HCORelation(BaseModel):
 # ==========================================================
 
 class HCPResponse(BaseModel):
-    batchId: str
-
+    # NOTE: batchId was removed here - it is NOT part of the real IQVIA
+    # response payload. Per src_to_raw.md: "System columns such as
+    # LOAD_DATE, BATCH_ID, and Source_Name are added" by our own
+    # ingestion pipeline (src/ingestion/src_to_raw_ingestion.py) after
+    # the API response is received, not sent by IQVIA itself.
     individual: Individual
 
     alternativeNames: List[AlternativeName] = []
@@ -282,8 +285,7 @@ class HCPResponse(BaseModel):
 
 
 class HCOResponse(BaseModel):
-    batchId: str
-
+    # NOTE: batchId removed - same reasoning as HCPResponse above.
     organization: Organization
 
     identifiers: List[Identifier] = []
