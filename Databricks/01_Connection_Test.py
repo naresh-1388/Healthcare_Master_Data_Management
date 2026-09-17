@@ -141,3 +141,81 @@ print("Healthcare_MDM runtime configuration: SUCCESS")
 # MAGIC
 # MAGIC
 # MAGIC
+
+# COMMAND ----------
+
+# DBTITLE 1,Quick Lambda Test from Databricks
+import requests
+import json
+
+# Test Lambda directly from Databricks
+lambda_url = "https://i7h6djmqxr3ycp37bixpxup7ce0cfwyr.lambda-url.us-east-1.on.aws/"
+
+test_payload = {
+    "body": {
+        "iqviaId": "W12345678",
+        "mdmEntityType": "HCP",
+        "countryCode": "NL"
+    }
+}
+
+print("Testing Lambda endpoint...")
+print(f"URL: {lambda_url}")
+print(f"Payload: {json.dumps(test_payload, indent=2)}")
+print("\n" + "="*60)
+
+try:
+    response = requests.post(
+        lambda_url,
+        json=test_payload,
+        headers={"Content-Type": "application/json"},
+        timeout=30
+    )
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response:\n{json.dumps(response.json(), indent=2)}")
+    
+    if response.status_code == 200:
+        print("\n✅ Lambda test: SUCCESS")
+    else:
+        print(f"\n❌ Lambda test: FAILED with status {response.status_code}")
+        
+except Exception as e:
+    print(f"\n❌ Lambda test: ERROR")
+    print(f"Error: {str(e)}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Test HCO Entity (NEW FIX)
+# Test HCO entity type (this was failing before our fix)
+test_hco_payload = {
+    "body": {
+        "iqviaId": "W99887766",
+        "mdmEntityType": "HCO",  # This was rejected before!
+        "countryCode": "BE"
+    }
+}
+
+print("Testing HCO entity type (previously failing)...")
+print(f"Payload: {json.dumps(test_hco_payload, indent=2)}")
+print("\n" + "="*60)
+
+try:
+    response = requests.post(
+        lambda_url,
+        json=test_hco_payload,
+        headers={"Content-Type": "application/json"},
+        timeout=30
+    )
+    
+    print(f"Status Code: {response.status_code}")
+    print(f"Response:\n{json.dumps(response.json(), indent=2)}")
+    
+    if response.status_code == 200:
+        print("\n✅ HCO test: SUCCESS (Fix working!)")
+    else:
+        print(f"\n❌ HCO test: FAILED with status {response.status_code}")
+        
+except Exception as e:
+    print(f"\n❌ HCO test: ERROR")
+    print(f"Error: {str(e)}")

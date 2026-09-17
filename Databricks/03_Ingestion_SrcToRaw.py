@@ -160,3 +160,15 @@ payload = {
 response = requests.post(url, headers=headers, json=payload)
 print(f"Status Code: {response.status_code}")
 print(f"Response: {response.text}")
+
+# COMMAND ----------
+
+source_identifiers = [
+    'hcp_name', 'hcp_address', 'hcp_alternate_name', 
+    'hcp_identification', 'hcp_specialty', 'hcp_phone', 
+    'hcp_email', 'hcp_education', 'hcp_tendencies', 
+    'hcp_origin_university', 'hcp_tax', 'hcp_language', 
+    'hcp_hco_affiliation', 'hco_name', 'hco_address', 
+    'hco_alternate_name', 'hco_identification', 'hco_specialty', 
+    'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy'
+]

@@ -169,23 +169,56 @@ def detect_environment(spark_session: SparkSession):
 # ============================================================
 # Initialize Spark + Environment
 # ============================================================
+# SERVERLESS WORKAROUND:
+#   Creating a new SparkSession here causes catalog context loss.
+#   For now, hardcode catalog values for DEV environment.
+#   In production (Job clusters), this would use detect_environment().
+# ============================================================
 
 try:
-    spark = SparkSession.builder.getOrCreate()
+    # Check if we're on Serverless (via environment variable or compute ID)
+    import os
+    compute_id = os.getenv("DATABRICKS_RUNTIME_VERSION", "")
+    
+    # For Serverless, hardcode catalog to avoid SparkSession creation
+    # This preserves the catalog set in the calling notebook
+    is_serverless = True  # TODO: Detect properly in production
+    
+    if is_serverless:
+        # SERVERLESS: Hardcoded values (no new SparkSession!)
+        catalog = "hmdm_dev"  # Lowercase to match Unity Catalog
+        env = "dev"
+        mail_recipient = "dev"
+        s3_bucket = "healthcare-master-data-management"
+        spark = None  # Will be passed by caller
+        
+        print("[SERVERLESS MODE] Using hardcoded catalog configuration")
+        print(f"Catalog Name : {catalog}")
+        print(f"Environment  : {env}")
+        print(f"S3 Bucket    : {s3_bucket}")
+    else:
+        # PRODUCTION: Dynamic detection with new SparkSession
+        spark = SparkSession.builder.getOrCreate()
 
-    (
-        catalog,
-        env,
-        mail_recipient,
-        s3_bucket,
-    ) = detect_environment(spark)
+        (
+            catalog,
+            env,
+            mail_recipient,
+            s3_bucket,
+        ) = detect_environment(spark)
 
-    print(f"Catalog Name : {catalog}")
-    print(f"Environment  : {env}")
-    print(f"S3 Bucket    : {s3_bucket}")
+        print(f"Catalog Name : {catalog}")
+        print(f"Environment  : {env}")
+        print(f"S3 Bucket    : {s3_bucket}")
 
 except Exception as e:
     print(f"Environment initialization skipped: {e}")
+    # Fallback to DEV defaults
+    catalog = "hmdm_dev"  # Lowercase to match Unity Catalog
+    env = "dev"
+    mail_recipient = "dev"
+    s3_bucket = "healthcare-master-data-management"
+    spark = None
 
 
 # ============================================================
