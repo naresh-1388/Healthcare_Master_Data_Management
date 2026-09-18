@@ -36,11 +36,18 @@ batch_id = int(batch_id_param) if batch_id_param.strip() else None
 
 import sys
 import os
+import importlib
 
 # Add src directory to Python path
 src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+
+# Force reload to pick up latest code changes
+import dq.data_quality
+import core.runtime_config
+importlib.reload(dq.data_quality)
+importlib.reload(core.runtime_config)
 
 from dq.data_quality import main_data_quality_pipeline, get_rules_for_source, get_rules
 from core.runtime_config import catalog, env, get_notebook_run_url
@@ -95,28 +102,33 @@ print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 
-source_tables = sorted({rule.source_table for rule in get_rules()})
-print(f"Source tables with configured DQ rules: {source_tables}")
+# Get bare table names from DQ rules
+bare_source_tables = sorted({rule.source_table for rule in get_rules()})
+print(f"Source tables with configured DQ rules: {bare_source_tables}")
+
+# Construct fully qualified table names for landing layer
+landing_schema = f"{catalog}.landing"
+staging_schema = f"{catalog}.staging"
 
 failures = []
-for source_table in source_tables:
-    target_table = next(
-        (r.target_table for r in get_rules_for_source(source_table)),
-        source_table,
-    )
+for bare_table in bare_source_tables:
+    # Construct fully qualified source and target table names
+    source_table_fqn = f"{landing_schema}.{bare_table}"
+    target_table_fqn = f"{staging_schema}.{bare_table}"
+    
     try:
-        print(f"\n--- DQ: {source_table} -> {target_table} ---")
+        print(f"\n--- DQ: {source_table_fqn} -> {target_table_fqn} ---")
         passed_df, rejected_df = main_data_quality_pipeline(
             source_identifier=source_identifier,
-            source_table=source_table,
+            source_table=source_table_fqn,
             source_system_name=source_system_name,
             reference_table=None,  # resolved internally per-rule where required
             batch_id=batch_id,
         )
         print(f"passed={passed_df.count()} rejected={rejected_df.count()}")
     except Exception as exc:  # noqa: BLE001
-        print(f"FAILED: {source_table} -> {exc}")
-        failures.append((source_table, str(exc)))
+        print(f"FAILED: {bare_table} -> {exc}")
+        failures.append((bare_table, str(exc)))
 
 # COMMAND ----------
 

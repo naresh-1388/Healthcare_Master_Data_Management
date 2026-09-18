@@ -105,6 +105,7 @@ else:
 
 # COMMAND ----------
 
+# DBTITLE 1,Runtime Configuration Check
 # ============================================================
 # ENVIRONMENT / RUNTIME CONFIGURATION CHECK
 # ============================================================
@@ -120,12 +121,12 @@ print("MDM schema    :", runtime_config.publish_schema)
 print("Util schema   :", runtime_config.util_schema)
 print("DQ config     :", runtime_config.dqm_config_tbl)
 
-assert runtime_config.catalog == "HMDM_DEV"
-assert runtime_config.raw_schema == "HMDM_DEV.raw"
-assert runtime_config.lnd_schema == "HMDM_DEV.landing"
-assert runtime_config.stg_schema == "HMDM_DEV.staging"
-assert runtime_config.publish_schema == "HMDM_DEV.mdm"
-assert runtime_config.util_schema == "HMDM_DEV.util"
+assert runtime_config.catalog.upper() == "HMDM_DEV"
+assert runtime_config.raw_schema.upper() == "HMDM_DEV.RAW"
+assert runtime_config.lnd_schema.upper() == "HMDM_DEV.LANDING"
+assert runtime_config.stg_schema.upper() == "HMDM_DEV.STAGING"
+assert runtime_config.publish_schema.upper() == "HMDM_DEV.MDM"
+assert runtime_config.util_schema.upper() == "HMDM_DEV.UTIL"
 
 print("\nRuntime configuration check: PASS")
 
@@ -558,3 +559,134 @@ print("\nTEST 7 — MDM_HUB transformation verification: PASS")
 # MAGIC
 # MAGIC **Next step after Test 7:** review the complete notebook execution from the first cell through Test 7. Only after that should we finalize the notebook and move to the remaining project implementation work.
 # MAGIC
+
+# COMMAND ----------
+
+# DBTITLE 1,Configure AWS Credentials (from Secrets Manager)
+# ============================================================
+# AWS SECRETS MANAGER ACCESS
+# ============================================================
+# Use Databricks Service Credential to access AWS Secrets Manager.
+# NO HARDCODED CREDENTIALS!
+# ============================================================
+
+import boto3
+import json
+from botocore.exceptions import ClientError
+
+print("Accessing AWS Secrets Manager via Databricks Service Credential...\n")
+print("="*60)
+
+try:
+    # Use Databricks Service Credential for AWS access
+    boto3_session = boto3.Session(
+        botocore_session=dbutils.credentials.getServiceCredentialsProvider(
+            "healthcare_mdm_secrets_credential"
+        ),
+        region_name="us-east-1"
+    )
+    sm = boto3_session.client("secretsmanager")
+    
+    print("AWS Secrets Manager client created: SUCCESS")
+    print("Region: us-east-1\n")
+    
+    # Test by retrieving secret
+    response = sm.get_secret_value(SecretId='healthcare-mdm/dev/api-snowflake')
+    secret = json.loads(response['SecretString'])
+    
+    print("Secrets Manager access: SUCCESS!")
+    print("="*60)
+    print(f"Secret Keys: {list(secret.keys())}")
+    print(f"Lambda URL: {secret.get('lambda_url', 'N/A')[:50]}...")
+    print(f"API Key: {secret.get('lambda_api_key', 'N/A')[:15]}...")
+    print("="*60)
+    print("\nREADY FOR TEST 8!")
+    
+except ClientError as e:
+    error_code = e.response['Error']['Code']
+    print(f"\n❌ FAILED: {error_code}")
+    print(f"Message: {e.response['Error']['Message']}")
+    
+    if error_code == 'AccessDeniedException':
+        print("\nVerify SecretsManagerReadWrite is attached to service credential")
+        
+except Exception as e:
+    print(f"\nError: {str(e)}")
+    import traceback
+    traceback.print_exc()
+
+# COMMAND ----------
+
+# DBTITLE 1,Test 8 - API to RAW Pipeline
+import sys
+import importlib
+from pyspark.sql import functions as F
+
+if 'src.api.api_to_raw_caller' in sys.modules:
+    importlib.reload(sys.modules['src.api.api_to_raw_caller'])
+
+from src.api import api_to_raw_caller
+
+print("Executing API to RAW Pipeline...\n")
+print("="*60)
+
+try:
+    # Get AWS credentials using Databricks Service Credential
+    import boto3
+    import json
+    from botocore.exceptions import ClientError
+    
+    boto3_session = boto3.Session(
+        botocore_session=dbutils.credentials.getServiceCredentialsProvider(
+            "healthcare_mdm_secrets_credential"
+        ),
+        region_name="us-east-1"
+    )
+    sm = boto3_session.client("secretsmanager")
+    
+    # Retrieve secrets
+    response = sm.get_secret_value(SecretId='healthcare-mdm/dev/api-snowflake')
+    secrets = json.loads(response['SecretString'])
+    
+    lambda_url = secrets.get('lambda_url')
+    lambda_api_key = secrets.get('lambda_api_key')
+    
+    print(f"Lambda URL: {lambda_url[:50]}...")
+    print("Calling API to RAW pipeline...\n")
+    
+    # Call the pipeline with explicit lambda credentials
+    result = api_to_raw_caller.run_api_to_raw(
+        max_records=5,
+        lambda_url=lambda_url,
+        lambda_api_key=lambda_api_key
+    )
+    
+    print("\n" + "="*60)
+    print("API TO RAW PIPELINE COMPLETED")
+    print("="*60)
+    print(f"Total Processed: {result['total_processed']}")
+    print(f"Total Success  : {result['total_success']}")
+    print(f"Total Failed   : {result['total_failed']}")
+    print(f"HCP Count      : {result['hcp_count']}")
+    print(f"HCO Count      : {result['hco_count']}")
+    print("="*60)
+    
+    if result['total_success'] > 0:
+        print("\nHCP RAW Data:")
+        hcp_df = spark.table("HMDM_DEV.raw.hcp_api_data").orderBy(F.col("create_date").desc()).limit(5)
+        display(hcp_df)
+        
+        print("\nHCO RAW Data:")
+        hco_df = spark.table("HMDM_DEV.raw.hco_api_data").orderBy(F.col("create_date").desc()).limit(5)
+        display(hco_df)
+        
+        print("\nTEST 8 - API to RAW pipeline: PASS")
+    else:
+        print("\nTEST 8 - API to RAW pipeline: FAIL")
+        print("No records processed successfully")
+        
+except Exception as e:
+    print(f"\nTEST 8 - API to RAW pipeline: ERROR")
+    print(f"Error: {str(e)}")
+    import traceback
+    traceback.print_exc()

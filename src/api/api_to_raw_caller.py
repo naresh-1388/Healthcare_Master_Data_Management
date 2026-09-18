@@ -394,7 +394,9 @@ def run_api_to_raw(
     secret_name: str = None,
     region_name: str = None,
     aws_access_key_id: Optional[str] = None,
-    aws_secret_access_key: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None,
+    lambda_url: Optional[str] = None,
+    lambda_api_key: Optional[str] = None
 ) -> Dict[str, int]:
     """
     Main orchestration function.
@@ -407,6 +409,8 @@ def run_api_to_raw(
         region_name: AWS region (default: from env or REGION_NAME)
         aws_access_key_id: Optional AWS access key (for Databricks Serverless)
         aws_secret_access_key: Optional AWS secret key (for Databricks Serverless)
+        lambda_url: Optional Lambda URL (if provided, skips AWS Secrets Manager lookup)
+        lambda_api_key: Optional Lambda API key (if provided, skips AWS Secrets Manager lookup)
         
     Returns:
         Dictionary with processing statistics
@@ -426,13 +430,17 @@ def run_api_to_raw(
     }
     
     try:
-        # Step 1: Get Lambda credentials from AWS Secrets Manager
-        lambda_url, api_key = get_lambda_credentials(
-            secret_name=secret_name or SECRET_NAME,
-            region_name=region_name or REGION_NAME,
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key
-        )
+        # Step 1: Get Lambda credentials (use provided or fetch from AWS Secrets Manager)
+        if lambda_url and lambda_api_key:
+            api_key = lambda_api_key
+            logger.info("Using provided Lambda credentials")
+        else:
+            lambda_url, api_key = get_lambda_credentials(
+                secret_name=secret_name or SECRET_NAME,
+                region_name=region_name or REGION_NAME,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key
+            )
         
         # Step 2: Get pending entities from control table
         spark = SparkSession.builder.getOrCreate()

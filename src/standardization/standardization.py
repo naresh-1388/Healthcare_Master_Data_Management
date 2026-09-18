@@ -311,7 +311,7 @@ def get_delta_condition(
         )
 
     condition = (
-        "batch_id IN ("
+        "mdm_batch_id IN ("
         + ", ".join(str(x) for x in batch_ids)
         + ")"
     )
@@ -1134,7 +1134,8 @@ def write_log(
 def main_pipeline(
     source_identifier: Optional[str] = None,
     source_system_name: Optional[str] = None,
-    tbl_nm: Optional[str] = None
+    tbl_nm: Optional[str] = None,
+    skip_batch_update: bool = False
 ):
     """
     Main RAW -> Landing standardization pipeline.
@@ -1254,10 +1255,15 @@ def main_pipeline(
         # UPDATE BATCH STATUS
         # ---------------------------------------------------------
 
-        update_batch_standardization_status(
-            source_system_name,
-            "Y"
-        )
+        if not skip_batch_update:
+            update_batch_standardization_status(
+                source_system_name,
+                "Y"
+            )
+        else:
+            logger.info(
+                "Skipping batch status update (skip_batch_update=True)"
+            )
 
         # ---------------------------------------------------------
         # LOG SUCCESS
@@ -1340,7 +1346,8 @@ def main_pipeline(
 def main_standardization_pipeline(
     source_identifier: Optional[str] = None,
     source_system_name: Optional[str] = None,
-    tbl_nm: Optional[str] = None
+    tbl_nm: Optional[str] = None,
+    skip_batch_update: bool = False
 ):
     """
     Compatibility function used by Databricks notebook calls.
@@ -1349,7 +1356,8 @@ def main_standardization_pipeline(
     return main_pipeline(
         source_identifier=source_identifier,
         source_system_name=source_system_name,
-        tbl_nm=tbl_nm
+        tbl_nm=tbl_nm,
+        skip_batch_update=skip_batch_update
     )
 
 

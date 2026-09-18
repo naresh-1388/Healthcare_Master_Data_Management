@@ -1060,7 +1060,7 @@ def write_to_target_table(
 # MAIN PIPELINE
 # ============================================================================
 
-def main_canonical_pipeline():
+def main_canonical_pipeline(skip_batch_update: bool = False):
     """Execute complete canonical pipeline."""
 
     (
@@ -1323,17 +1323,23 @@ def main_canonical_pipeline():
     # UPDATE BATCH STATUS
     # ------------------------------------------------------------------------
 
-    update_batch_log_tbl(
-        "canonical",
-        "Y",
-        batch_condition,
-        source_system_name,
-    )
+    if not skip_batch_update:
+        update_batch_log_tbl(
+            "canonical",
+            "Y",
+            batch_condition,
+            source_system_name,
+        )
 
-    logger.info(
-        f"Canonical batch status updated to Y "
-        f"for source system {source_system_name}"
-    )
+        logger.info(
+            f"Canonical batch status updated to Y "
+            f"for source system {source_system_name}"
+        )
+    else:
+        logger.info(
+            "Skipping canonical batch status update "
+            "(skip_batch_update=True)"
+        )
 
     # ------------------------------------------------------------------------
     # FINAL LOG
