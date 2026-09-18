@@ -106,8 +106,18 @@ try:
     env
     catalog
     get_notebook_run_url
+    main_canonical_pipeline
+    source_system_name
+    source_identifiers
 except NameError:
+    import sys, os
+    src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
     from core.runtime_config import catalog, env, get_notebook_run_url
+    from canonical.canonical import main_canonical_pipeline
+    source_system_name = "IQVIA_API"
+    source_identifiers = ['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']
 
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
@@ -185,14 +195,3 @@ if failures:
 # COMMAND ----------
 
 dbutils.notebook.exit("SUCCESS")
-
-# COMMAND ----------
-
-# Verify the conflicting LOAD_DATE mappings exist
-spark.sql("""
-    SELECT source_identifier, src_attribute, tgt_attribute
-    FROM hmdm_dev.util.ctl_can_mapg 
-    WHERE source_system_name = 'IQVIA_API'
-      AND LOWER(TRIM(src_attribute)) = 'load_date'
-    ORDER BY source_identifier
-""").show(25, truncate=False)

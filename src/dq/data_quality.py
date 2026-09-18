@@ -150,7 +150,7 @@ DQ_RULES: List[DQRule] = [
         "hco_name",
         "null_check",
         "Reject records if the value of the column is Null",
-        "hco_name",
+        "organization_name",
         "hco_name",
     ),
     DQRule(
@@ -158,146 +158,146 @@ DQ_RULES: List[DQRule] = [
         "null_check",
         "Reject records if the value of the column is Null",
         "first_name",
-        "hco_name",
+        "hcp_name",
     ),
     DQRule(
         "hcp_name",
         "name_address_completeness_check",
         "Reject records in name table if no complete address is present",
-        "source_id",
+        "iqvia_id",
         "hcp_name",
     ),
     DQRule(
         "hco_name",
         "name_address_completeness_check",
         "Reject records in name table if no complete address is present",
-        "source_id",
+        "iqvia_id",
         "hco_name",
     ),
     DQRule(
         "hcp_address",
         "address_mdr_check",
         "Reject records if no complete address is present or source_fk is not present in name table",
-        "source_fk",
+        "iqvia_id",
         "hcp_address",
     ),
     DQRule(
         "hco_address",
         "address_mdr_check",
         "Reject records if no complete address is present or source_fk is not present in name table",
-        "source_fk",
+        "iqvia_id",
         "hco_address",
     ),
     DQRule(
         "hcp_email",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in email table",
-        "source_fk",
+        "iqvia_id",
         "hcp_email",
     ),
     DQRule(
         "hcp_alternate_name",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in alternate name table",
-        "source_fk",
+        "iqvia_id",
         "hcp_alternate_name",
     ),
     DQRule(
         "hcp_identification",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in identification table",
-        "source_fk",
+        "iqvia_id",
         "hcp_identification",
     ),
     DQRule(
         "hcp_specialty",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in specialty table",
-        "source_fk",
+        "iqvia_id",
         "hcp_specialty",
     ),
     DQRule(
         "hcp_phone",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
-        "source_fk",
+        "iqvia_id",
         "hcp_phone",
     ),
     DQRule(
         "hcp_education",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in education table",
-        "source_fk",
+        "iqvia_id",
         "hcp_education",
     ),
     DQRule(
         "hcp_origin_university",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in origin university table",
-        "source_fk",
+        "iqvia_id",
         "hcp_origin_university",
     ),
     DQRule(
         "hcp_tax",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in table",
-        "source_fk",
+        "iqvia_id",
         "hcp_tax",
     ),
     DQRule(
         "hco_tax",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in table",
-        "source_fk",
+        "iqvia_id",
         "hco_tax",
     ),
     DQRule(
         "hco_email",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in email table",
-        "source_fk",
+        "iqvia_id",
         "hco_email",
     ),
     DQRule(
         "hco_alternate_name",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in alternate name table",
-        "source_fk",
+        "iqvia_id",
         "hco_alternate_name",
     ),
     DQRule(
         "hco_identification",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in identification table",
-        "source_fk",
+        "iqvia_id",
         "hco_identification",
     ),
     DQRule(
         "hco_specialty",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in specialty table",
-        "source_fk",
+        "iqvia_id",
         "hco_specialty",
     ),
     DQRule(
         "hco_phone",
         "mdr_check",
         "Reject records if the value of the source_fk is not present in phone table",
-        "source_fk",
+        "iqvia_id",
         "hco_phone",
     ),
     DQRule(
         "hcp_hco_affiliation",
         "affiliation_mdr_check",
         "Reject records in name table if source id is not present",
-        "source_id",
+        "iqvia_id",
         "hcp_hco_affiliation",
     ),
     DQRule(
         "hco_hco_hierarchy",
         "hierarchy_mdr_check",
         "Reject records if source id is not present in name table",
-        "source_id",
+        "iqvia_id",
         "hco_hco_hierarchy",
     ),
     DQRule(
@@ -306,7 +306,7 @@ DQ_RULES: List[DQRule] = [
         # BUGFIX: description previously said "phone table" (copy-paste
         # from the HCP_PHONE rule above) instead of "tendencies table".
         "Reject records if the value of the source_fk is not present in tendencies table",
-        "source_fk",
+        "iqvia_id",
         "hcp_tendencies",
     ),
     DQRule(
@@ -315,7 +315,7 @@ DQ_RULES: List[DQRule] = [
         # BUGFIX: description previously said "phone table" (copy-paste
         # from the HCP_PHONE rule above) instead of "language table".
         "Reject records if the value of the source_fk is not present in language table",
-        "source_fk",
+        "iqvia_id",
         "hcp_language",
     ),
 ]
@@ -550,7 +550,7 @@ def apply_name_address_completeness_check(
         address_df: The LANDING-layer address dataframe for the same
             entity (e.g. hcp_address/hco_address).
         key_column: The join key present in both dataframes (typically
-            "source_id"/"source_fk") used to match a name row to its
+            "iqvia_id"/"iqvia_id") used to match a name row to its
             address row(s).
 
     Returns:
@@ -661,6 +661,7 @@ def apply_address_mdr_check(
         "Third_Party_ID",
         "individualEid",
         "individualId",
+        "iqvia_id",
     ]
 
     name_key = None
@@ -782,6 +783,7 @@ def apply_mdr_check(
         "Third_Party_ID",
         "individualEid",
         "individualId",
+        "iqvia_id",
     ]
 
     parent_key = None
@@ -1352,11 +1354,21 @@ def get_rules_for_source(
     if configured_rules:
         return configured_rules
 
+    # Extract bare table name from fully-qualified name (e.g.
+    # "hmdm_dev.landing.hcp_name" -> "hcp_name") so DQ_RULES entries
+    # which use bare names match regardless of how the caller qualified
+    # the source table.
+    bare_table = (
+        source_table.rsplit(".", 1)[-1]
+        if "." in source_table
+        else source_table
+    )
+
     return [
         rule
         for rule in DQ_RULES
         if rule.source_table.lower()
-        == source_table.lower()
+        == bare_table.lower()
     ]
 
 
@@ -1632,6 +1644,7 @@ def main_data_quality_pipeline(
     source_system_name: Optional[str] = None,
     reference_table: Optional[str] = None,
     batch_id: Optional[int] = None,
+    skip_batch_update: bool = False,
 ) -> Tuple[DataFrame, DataFrame]:
 
     """
@@ -1666,15 +1679,17 @@ def main_data_quality_pipeline(
         else:
             resolved_batch_id = int(batch_id)
 
-        rules = get_configured_rules_for_source(
-            source_identifier=source_identifier,
+        rules = get_rules_for_source(
+            source_table=source_table,
             source_system_name=source_system_name,
+            source_identifier=source_identifier,
         )
 
         if not rules:
             raise DQProcessingError(
-                f"No active configured DQ rules found for "
-                f"source_identifier={source_identifier}"
+                f"No DQ rules found for "
+                f"source_identifier={source_identifier}, "
+                f"source_table={source_table}"
             )
 
         log_rows = []
@@ -1740,7 +1755,11 @@ def main_data_quality_pipeline(
 
         if rejected_count > 0:
 
-            if "individualEid" in rejected_df.columns:
+            if "iqvia_id" in rejected_df.columns:
+                record_key = F.col(
+                    "iqvia_id"
+                ).cast("string")
+            elif "individualEid" in rejected_df.columns:
                 record_key = F.col(
                     "individualEid"
                 ).cast("string")
@@ -1798,25 +1817,31 @@ def main_data_quality_pipeline(
                 .mode("append") \
                 .saveAsTable(dqm_reject_tbl)
 
-        if source_system_name is None:
-            raise DQProcessingError(
-                "source_system_name is required to update "
-                "batch log."
+        if skip_batch_update:
+            print(
+                f"{MODULE_NAME}: Skipping batch status update "
+                f"(skip_batch_update=True)"
+            )
+        else:
+            if source_system_name is None:
+                raise DQProcessingError(
+                    "source_system_name is required to update "
+                    "batch log."
+                )
+
+            safe_source_system = source_system_name.replace(
+                "'",
+                "''",
             )
 
-        safe_source_system = source_system_name.replace(
-            "'",
-            "''",
-        )
-
-        spark.sql(
-            f"""
-            UPDATE {batch_log_tbl}
-            SET dq_status = 'Y'
-            WHERE batch_id = {int(resolved_batch_id)}
-              AND source_system_name = '{safe_source_system}'
-            """
-        )
+            spark.sql(
+                f"""
+                UPDATE {batch_log_tbl}
+                SET dq_status = 'Y'
+                WHERE batch_id = {int(resolved_batch_id)}
+                  AND source_system_name = '{safe_source_system}'
+                """
+            )
 
         print(
             f"{MODULE_NAME}: DQ pipeline completed successfully. "
