@@ -53,9 +53,9 @@ print("Snowflake credentials retrieved: SUCCESS")
 # COMMAND ----------
 
 # DBTITLE 1,Install Snowflake Connector
-# # Install Snowflake connector for Databricks Serverless
-# %pip install snowflake-connector-python --quiet
-# dbutils.library.restartPython()
+# Install Snowflake connector for Databricks Serverless
+%pip install snowflake-connector-python --quiet
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -64,20 +64,20 @@ print("Snowflake credentials retrieved: SUCCESS")
 # Validate the development Snowflake environment with secret-derived credentials.
 # Use snowflake-connector-python for Serverless compatibility
 
+import snowflake.connector
+
+# Create connection (eager — raises immediately on failure)
+conn = snowflake.connector.connect(
+    account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
+    user=sf_user,
+    password=sf_password,
+    warehouse=secret["snowflake_warehouse"],
+    database=secret["snowflake_database"],
+    schema=secret["snowflake_schema"]
+)
+
 try:
-    import snowflake.connector
-    
-    # Create connection
-    conn = snowflake.connector.connect(
-        account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
-        user=sf_user,
-        password=sf_password,
-        warehouse=secret["snowflake_warehouse"],
-        database=secret["snowflake_database"],
-        schema=secret["snowflake_schema"]
-    )
-    
-    # Execute test query
+    # Execute test query (eager — raises on SQL error)
     cursor = conn.cursor()
     cursor.execute("SELECT CURRENT_USER() AS USER_NAME, CURRENT_DATABASE() AS DB_NAME, CURRENT_SCHEMA() AS SCHEMA_NAME, CURRENT_WAREHOUSE() AS WH_NAME")
     result = cursor.fetchall()
@@ -93,6 +93,8 @@ try:
     print("✅ Snowflake READ connection: SUCCESS")
     
 except Exception as e:
+    if 'conn' in dir() and conn:
+        conn.close()
     print(f"❌ Snowflake connection failed: {str(e)}")
     print("\nNote: Serverless compute requires snowflake-connector-python.")
     print("Install with: %pip install snowflake-connector-python")
@@ -104,20 +106,20 @@ except Exception as e:
 # Snowflake write connectivity
 # Validate write access with a dedicated connectivity-test object.
 
+import snowflake.connector
+
+# Create connection (eager — raises immediately on failure)
+conn = snowflake.connector.connect(
+    account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
+    user=sf_user,
+    password=sf_password,
+    warehouse=secret["snowflake_warehouse"],
+    database=secret["snowflake_database"],
+    schema=secret["snowflake_schema"]
+)
+
 try:
-    import snowflake.connector
-    
-    # Create connection
-    conn = snowflake.connector.connect(
-        account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
-        user=sf_user,
-        password=sf_password,
-        warehouse=secret["snowflake_warehouse"],
-        database=secret["snowflake_database"],
-        schema=secret["snowflake_schema"]
-    )
-    
-    # Create test table
+    # Create test table (eager — raises on SQL error)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE OR REPLACE TABLE CONNECTION_TEST (
@@ -129,7 +131,7 @@ try:
         )
     """)
     
-    # Insert test data
+    # Insert test data (eager — raises on SQL error)
     cursor.execute("""
         INSERT INTO CONNECTION_TEST (USER_NAME, DB_NAME, SCHEMA_NAME, WH_NAME)
         SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()
@@ -142,6 +144,8 @@ try:
     print("✅ Snowflake WRITE connection: SUCCESS")
     
 except Exception as e:
+    if 'conn' in dir() and conn:
+        conn.close()
     print(f"❌ Snowflake write failed: {str(e)}")
 
 

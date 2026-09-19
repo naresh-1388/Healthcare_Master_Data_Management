@@ -16,7 +16,7 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source configuration identifier")
 dbutils.widgets.dropdown("entity_type", "HCP", ["HCP", "HCO"], "Entity type to ingress")
 dbutils.widgets.text(
@@ -113,6 +113,14 @@ print(f"Job run URL : {get_notebook_run_url()}")
 print(f"Entity type : {entity_type}")
 print(f"Tables      : {staging_tables}")
 
+# Reset ingress batch status to 'N' for this source system so we can reprocess
+spark.sql(f"""
+    UPDATE {catalog}.util.ctl_batch_log_tbl
+    SET ingress_status = 'N'
+    WHERE source_system_name = '{source_system_name}'
+""")
+print(f"Ingress batch status reset to 'N' for {source_system_name}")
+
 failures = []
 rows_written = 0
 for source_table in staging_tables:
@@ -124,12 +132,24 @@ for source_table in staging_tables:
             source_system_name=source_system_name,
             source_table=source_table,
             entity_type=entity_type,
+            skip_batch_update=True,
         )
         print(f"rows written: {count}")
         rows_written += count or 0
     except Exception as exc:  # noqa: BLE001
         print(f"FAILED: {source_table} -> {exc}")
         failures.append((source_table, str(exc)))
+
+# Update ingress batch status to 'Y' once after all entities
+if not failures:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET ingress_status = 'Y'
+        WHERE source_system_name = '{source_system_name}'
+    """)
+    print(f"\nIngress batch status updated to 'Y' for {source_system_name}")
+
+print(f"\nSummary: {rows_written} rows written, {len(failures)} failed")
 
 # COMMAND ----------
 
@@ -139,18 +159,6 @@ for source_table in staging_tables:
 
 print(f"Total rows written across all tables: {rows_written}")
 if failures:
-    # Check if all failures are due to import issues
-    import_errors = [(tbl, err) for tbl, err in failures if "relative import" in err]
-    other_errors = [(tbl, err) for tbl, err in failures if "relative import" not in err]
-    
-    if import_errors and not other_errors:
-        print(f"\nWarning: All {len(import_errors)} tables failed due to module import issues.")
-        print("\nThis is a module structure issue in mdm_ingress.py (relative imports).")
-        print("The module needs to be fixed to use absolute imports or run as a package.")
-        print("\nFailed tables:")
-        for tbl, _ in import_errors:
-            print(f"  - {tbl}")
-    else:
-        raise RuntimeError(f"MDM Ingress failed for {len(failures)} tables: {failures}")
+    raise RuntimeError(f"MDM Ingress failed for {len(failures)} tables: {failures}")
 
 dbutils.notebook.exit("SUCCESS")

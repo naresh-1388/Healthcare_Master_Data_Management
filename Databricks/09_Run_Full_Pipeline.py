@@ -30,7 +30,7 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = auto-detect pending batch at each stage)")
 dbutils.widgets.text("stage_timeout_seconds", "3600", "Per-stage timeout (seconds)")
 

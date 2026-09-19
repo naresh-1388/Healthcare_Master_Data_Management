@@ -27,11 +27,15 @@ try:
     from ..core.runtime_config import (
         get_batch_status_filter,
         update_batch_log_tbl,
+        stg_schema,
+        catalog as _catalog,
     )
 except ImportError:
     from core.runtime_config import (
         get_batch_status_filter,
         update_batch_log_tbl,
+        stg_schema,
+        catalog as _catalog,
     )
 
 try:
@@ -1010,12 +1014,36 @@ HCO_INGRESS_MAPPING = [
 HCP_TARGET_TABLE = "hcp"
 # Development smoke-test mapping for the validated HCP canonical payload.
 DEV_HCP_FIELD_MAPPING = {
-    "individualEid": "individualEid",
-    "firstName": "firstName",
-    "middleName": "middleName",
-    "lastName": "lastName",
-    "genderCode": "genderCode",
-    "countryCode": "countryCode",
+    "iqvia_id": "individualEid",
+    "first_name": "firstName",
+    "middle_name": "middleName",
+    "last_name": "lastName",
+    "country_code": "countryCode",
+}
+
+HCP_SOURCE_TO_MDM = {
+    "hcp_name": "hcp", "hcp_specialty": "hcp_specialty",
+    "hcp_alternate_name": "hcp_alternate_name", "hcp_identification": "hcp_license",
+    "hcp_education": "hcp_therapeutic_area", "hcp_address": "hcp_address",
+    "hcp_phone": "hcp_phone", "hcp_email": "hcp_email",
+    "hcp_tendencies": "hcp_tendencies", "hcp_origin_university": "hcp_origin_university",
+    "hcp_tax": "hcp_tax", "hcp_language": "hcp_language",
+    "hcp_hco_affiliation": "hcp_hco_affiliation",
+}
+
+DEV_HCO_FIELD_MAPPING = {
+    "iqvia_id": "organizationEid",
+    "organization_name": "organizationName",
+    "organization_type": "organizationType",
+    "country_code": "countryCode",
+}
+
+HCO_SOURCE_TO_MDM = {
+    "hco_name": ["hco", "hco_name"], "hco_alternate_name": "hco_alternate_identifier",
+    "hco_phone": "hco_phone", "hco_specialty": "hco_specialty",
+    "hco_address": "hco_address", "hco_email": "hco_email",
+    "hco_identification": "hco_identification", "hco_hco_hierarchy": "hco_hco_hierarchy",
+    "hco_tax": "hco_tax",
 }
 
 HCP_PAYLOAD_ATTRIBUTES = [
@@ -1070,11 +1098,11 @@ def prepare_hcp_ingress(
             "Do not derive it from an Informatica logical object name."
         )
 
-    # The development smoke-test mapping matches the validated canonical HCP payload.
-    if not field_mapping and target_table and target_table.lower() == "hcp":
+    # Use the DEV HCP field mapping for any HCP target when not explicitly supplied.
+    if not field_mapping:
         field_mapping = dict(DEV_HCP_FIELD_MAPPING)
         logger.info(
-            "Using TEST_HCP physical field mapping for target %s.",
+            "Using DEV_HCP field mapping for target %s.",
             target_table,
         )
 
@@ -1117,7 +1145,55 @@ def prepare_hcp_ingress(
 
 
 # ---------------------------------------------------------------------------
-# HCO ingress
+# HCO ingress (simple — uses DEV_HCO_FIELD_MAPPING like HCP)
+# ---------------------------------------------------------------------------
+
+def prepare_hco_simple_ingress(
+    df: DataFrame,
+    source_table: str,
+    target_table: str,
+    field_mapping: Optional[Dict[str, str]] = None,
+) -> Dict[str, DataFrame]:
+    """
+    Prepare HCO data for an MDM target using a simple column mapping.
+    """
+    if not target_table:
+        raise ValueError("Physical HCO ingress target_table is required.")
+
+    if not field_mapping:
+        field_mapping = dict(DEV_HCO_FIELD_MAPPING)
+        logger.info("Using DEV_HCO field mapping for target %s.", target_table)
+
+    source_columns = {c.lower(): c for c in df.columns}
+    select_exprs = []
+
+    for source_column, target_column in field_mapping.items():
+        actual_column = source_columns.get(source_column.lower())
+        if actual_column is None:
+            continue
+        select_exprs.append(F.col(actual_column).alias(target_column))
+
+    if not select_exprs:
+        raise RuntimeError(
+            f"No configured HCO ingress columns found in source table: {source_table}"
+        )
+
+    selected_names = {
+        str(tc).lower()
+        for sc, tc in field_mapping.items()
+        if str(sc).lower() in source_columns
+    }
+
+    for column_name in df.columns:
+        if column_name.upper() in {"BATCH_ID", "LOAD_DATE", "SOURCE_NAME"}:
+            if str(column_name).lower() not in selected_names:
+                select_exprs.append(F.col(column_name))
+
+    return {target_table: df.select(*select_exprs)}
+
+
+# ---------------------------------------------------------------------------
+# HCO ingress (legacy — uses HCO_INGRESS_MAPPING column-level mapping)
 # ---------------------------------------------------------------------------
 
 def prepare_hco_ingress(
@@ -1232,18 +1308,17 @@ def write_prepared_ingress(
                 "Physical target name is required for ingress write."
             )
 
-        qualified_target = _qualify_table(
-            physical_target,
-            publish_schema,
-        )
-
-        if not _table_exists(spark, qualified_target):
-            raise RuntimeError(
-                f"Approved physical MDM target table does not exist: "
-                f"{qualified_target}. "
-                "The ingress module will not create an invented "
-                "target table."
+        # Fully qualify target with catalog.schema.table
+        if "." not in publish_schema:
+            qualified_target = f"{_catalog}.{publish_schema}.{physical_target}"
+        else:
+            qualified_target = _qualify_table(
+                physical_target,
+                publish_schema,
             )
+
+        # saveAsTable auto-creates the MDM target table on first run.
+        # No pre-existence check needed — ingress is the initial producer.
 
         output_df = df
 
@@ -1332,6 +1407,28 @@ def process_hcp_ingress(
     )
 
 
+def process_hco_simple_ingress(
+    spark: SparkSession,
+    source_table: str,
+    source_system_name: str,
+    batch_id: int,
+    publish_schema: str = DEFAULT_PUBLISH_SCHEMA,
+    target_table: Optional[str] = None,
+    field_mapping: Optional[Dict[str, str]] = None,
+) -> int:
+    """Process one HCO ingress batch using DEV_HCO_FIELD_MAPPING."""
+    logger.info("Starting HCO MDM ingress (simple). source=%s batch_id=%s", source_table, batch_id)
+
+    df = read_source_table(spark=spark, source_table=source_table, batch_id=batch_id)
+    df = validate_ingress_input(df=df, source_table=source_table)
+
+    prepared = prepare_hco_simple_ingress(
+        df=df, source_table=source_table, target_table=target_table, field_mapping=field_mapping,
+    )
+
+    return write_prepared_ingress(spark=spark, prepared=prepared, publish_schema=publish_schema, batch_id=batch_id)
+
+
 def process_hco_ingress(
     spark: SparkSession,
     source_table: str,
@@ -1417,6 +1514,7 @@ def process_ingress(
     target_table: Optional[str] = None,
     field_mapping: Optional[Dict[str, str]] = None,
     target_table_map: Optional[Dict[str, str]] = None,
+    skip_batch_update: bool = False,
 ) -> int:
     """
     Main ingress entry point.
@@ -1437,62 +1535,88 @@ def process_ingress(
         )
         return 0
 
+    # Qualify source table with staging schema if not already qualified
+    if "." not in source_table:
+        source_table = f"{stg_schema}.{source_table}"
+
+    # Determine MDM target table(s) from source-to-MDM mapping
+    source_table_short = source_table.split(".")[-1].lower()
+
+    if not target_table:
+        if entity_type.upper() == "HCP":
+            mapped = HCP_SOURCE_TO_MDM.get(source_table_short, source_table_short)
+        elif entity_type.upper() == "HCO":
+            mapped = HCO_SOURCE_TO_MDM.get(source_table_short, source_table_short)
+        else:
+            mapped = source_table_short
+        # Support one-source-to-many-targets (e.g. hco_name -> [hco, hco_name])
+        if isinstance(mapped, list):
+            target_tables = mapped
+        else:
+            target_tables = [mapped]
+    else:
+        target_tables = [target_table]
+
     total_processed = 0
 
     for batch_id in pending_batches:
 
         logger.info(
-            "Processing ingress batch %s for %s.",
+            "Processing ingress batch %s for %s. targets=%s",
             batch_id,
             source_identifier,
+            target_tables,
         )
 
         try:
+            for tgt in target_tables:
 
-            if entity_type.upper() == "HCP":
+                if entity_type.upper() == "HCP":
 
-                processed = process_hcp_ingress(
-                    spark=spark,
-                    source_table=source_table,
-                    source_system_name=source_system_name,
-                    batch_id=batch_id,
-                    publish_schema=publish_schema,
-                    target_table=target_table,
-                    field_mapping=field_mapping,
+                    processed = process_hcp_ingress(
+                        spark=spark,
+                        source_table=source_table,
+                        source_system_name=source_system_name,
+                        batch_id=batch_id,
+                        publish_schema=publish_schema,
+                        target_table=tgt,
+                        field_mapping=field_mapping,
+                    )
+
+                elif entity_type.upper() == "HCO":
+
+                    processed = process_hco_simple_ingress(
+                        spark=spark,
+                        source_table=source_table,
+                        source_system_name=source_system_name,
+                        batch_id=batch_id,
+                        publish_schema=publish_schema,
+                        target_table=tgt,
+                        field_mapping=field_mapping,
+                    )
+
+                else:
+                    raise ValueError(
+                        f"Unsupported entity_type '{entity_type}'. "
+                        "Expected HCP or HCO."
+                    )
+
+                total_processed += processed
+
+            # Update batch status only after all targets for this batch succeed
+            if not skip_batch_update:
+                update_batch_log_tbl(
+                    "ingress",
+                    "Y",
+                    batch_id,
+                    source_system_name,
                 )
-
-            elif entity_type.upper() == "HCO":
-
-                processed = process_hco_ingress(
-                    spark=spark,
-                    source_table=source_table,
-                    source_system_name=source_system_name,
-                    batch_id=batch_id,
-                    publish_schema=publish_schema,
-                    target_table_map=target_table_map,
-                )
-
-            else:
-                raise ValueError(
-                    f"Unsupported entity_type '{entity_type}'. "
-                    "Expected HCP or HCO."
-                )
-
-            # Update only the actual control-table column that exists.
-            update_batch_log_tbl(
-                "ingress",
-                "Y",
-                batch_id,
-                source_system_name,
-            )
-
-            total_processed += processed
 
             logger.info(
                 "Ingress batch %s completed successfully. "
                 "Records processed=%s",
                 batch_id,
-                processed,
+                total_processed,
             )
 
         except Exception:
@@ -1515,6 +1639,7 @@ def main(
     target_table: Optional[str] = None,
     field_mapping: Optional[Dict[str, str]] = None,
     target_table_map: Optional[Dict[str, str]] = None,
+    skip_batch_update: bool = False,
 ) -> int:
     """
     Public entry point for Databricks/Airflow.
@@ -1543,6 +1668,7 @@ def main(
             target_table=target_table,
             field_mapping=field_mapping,
             target_table_map=target_table_map,
+            skip_batch_update=skip_batch_update,
         )
 
         elapsed = (

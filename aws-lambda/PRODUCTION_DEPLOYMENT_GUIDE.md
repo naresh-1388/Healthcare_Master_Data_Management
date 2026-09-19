@@ -1,4 +1,4 @@
-# Production-Style AWS Lambda Deployment - Full Console Walkthrough
+![](path)# Production-Style AWS Lambda Deployment - Full Console Walkthrough
 
 This is the AWS Console (point-and-click) version of the same deployment
 `template.yaml`/SAM automates. Do this once by hand to understand every

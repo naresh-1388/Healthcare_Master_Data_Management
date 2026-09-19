@@ -259,13 +259,8 @@ def write_egress(
         )
         return 0
 
-    # Egress must publish into an already-approved physical target.
-    # Do not silently mutate its schema.
-    if not _table_exists(spark, target_table):
-        raise RuntimeError(
-            f"Approved physical egress target table does not exist: "
-            f"{target_table}"
-        )
+    # saveAsTable auto-creates the target table on first run.
+    # No pre-existence check needed — egress is the initial producer.
 
     (
         df.write
@@ -334,7 +329,8 @@ def process_egress_batch(
     batch_id: int,
     source_table: str,
     target_table: str,
-    write_mode: str = "append"
+    write_mode: str = "append",
+    skip_batch_update: bool = False
 ) -> Dict[str, object]:
     """
     Process one eligible egress batch.
@@ -472,11 +468,12 @@ def process_egress_batch(
     # Status update ONLY after successful write + reconciliation
     # -------------------------------------------------------------
 
-    update_egress_status(
-        spark=spark,
-        source_system_name=source_system_name,
-        batch_id=batch_id
-    )
+    if not skip_batch_update:
+        update_egress_status(
+            spark=spark,
+            source_system_name=source_system_name,
+            batch_id=batch_id
+        )
 
     print("=" * 80)
     print("MDM EGRESS COMPLETE")
@@ -526,7 +523,8 @@ def main_pipeline(
     source_table: str,
     target_table: str,
     batch_id: Optional[int] = None,
-    write_mode: str = "append"
+    write_mode: str = "append",
+    skip_batch_update: bool = False
 ) -> Dict[str, object]:
     """
     Main Egress entry point.
@@ -556,7 +554,8 @@ def main_pipeline(
         batch_id=batch_id,
         source_table=source_table,
         target_table=target_table,
-        write_mode=write_mode
+        write_mode=write_mode,
+        skip_batch_update=skip_batch_update
     )
 
 

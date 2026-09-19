@@ -661,6 +661,15 @@ def build_mapping_string(mapping_df):
             if not tgt_attribute:
                 continue
 
+            # Skip Load_Date — create_mapped_data() adds it automatically
+            if tgt_attribute.strip().lower() == "load_date":
+                logger.info(
+                    f"Skipping canonical mapping "
+                    f"{src_attribute}->{tgt_attribute} "
+                    f"(collides with auto-added Load_Date)"
+                )
+                continue
+
             if src_attribute is None:
 
                 expression = (

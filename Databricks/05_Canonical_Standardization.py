@@ -87,19 +87,13 @@ print(f"Source Identifiers: {len(source_identifiers)} items")
 # COMMAND ----------
 
 # DBTITLE 1,Run Canonical Pipeline
-# Fix: Remove conflicting LOAD_DATE mappings (create_mapped_data already adds Load_Date)
-spark.sql("""
-    DELETE FROM hmdm_dev.util.ctl_can_mapg
-    WHERE source_system_name = 'IQVIA_API'
-      AND LOWER(TRIM(src_attribute)) = 'load_date'
-      AND LOWER(TRIM(tgt_attribute)) = 'load_date'
-""")
+# Reset canonical batch status for reprocessing
 spark.sql("""
     UPDATE hmdm_dev.util.ctl_batch_log_tbl
     SET canonical_status = 'N'
     WHERE source_system_name = 'IQVIA_API'
 """)
-print("Removed conflicting LOAD_DATE canonical mappings, reset canonical batch status")
+print("Reset canonical batch status for IQVIA_API")
 
 # Ensure imports are available even if cells were run out of order
 try:

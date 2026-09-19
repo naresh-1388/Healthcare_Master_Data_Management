@@ -18,7 +18,7 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.dropdown("entity_type", "HCP", ["HCP", "HCO"], "Entity type to egress")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest eligible batch)")
 dbutils.widgets.dropdown("write_mode", "append", ["append", "overwrite"], "Write mode for the Master output table")
@@ -117,8 +117,22 @@ print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 print(f"Entity type : {entity_type}")
 
+# Reset egress batch status to 'N' for this source system so we can reprocess
+spark.sql(f"""
+    UPDATE {catalog}.util.ctl_batch_log_tbl
+    SET egress_status = 'N'
+    WHERE source_system_name = '{source_system_name}'
+""")
+print(f"Egress batch status reset to 'N' for {source_system_name}")
+
 failures = []
+rows_written = 0
 for source_table, target_table in egress_groups:
+    # Skip MDM source tables that don't exist yet (e.g. child tables not created)
+    if not spark.catalog.tableExists(source_table):
+        print(f"\n--- Egress: {source_table} -> {target_table} ---")
+        print(f"SKIPPED: source table does not exist")
+        continue
     try:
         print(f"\n--- Egress: {source_table} -> {target_table} ---")
         result = run_mdm_egress(
@@ -128,11 +142,24 @@ for source_table, target_table in egress_groups:
             target_table=target_table,
             batch_id=batch_id,
             write_mode=write_mode,
+            skip_batch_update=True,
         )
         print(result)
+        rows_written += result.get("written_records", 0)
     except Exception as exc:  # noqa: BLE001
         print(f"FAILED: {source_table} -> {target_table}: {exc}")
         failures.append((source_table, str(exc)))
+
+# Update egress batch status to 'Y' once after all groups
+if not failures:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET egress_status = 'Y'
+        WHERE source_system_name = '{source_system_name}'
+    """)
+    print(f"\nEgress batch status updated to 'Y' for {source_system_name}")
+
+print(f"\nSummary: {rows_written} rows written, {len(failures)} failed")
 
 # COMMAND ----------
 

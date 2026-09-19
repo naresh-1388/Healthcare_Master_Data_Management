@@ -350,11 +350,8 @@ try:
         task_id = ctx.idInJob().get()
 
     except Exception:
-        print(
-            "Warning: Failed to extract job context. "
-            "Using default runtime IDs."
-        )
-
+        # Serverless / Spark Connect does not expose JVM-level notebook
+        # context APIs.  Silently fall back to default IDs (no warning).
         cluster_id = "0000"
         job_id = "0000"
         run_id = "0000"
