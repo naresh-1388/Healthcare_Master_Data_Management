@@ -229,3 +229,10 @@ else:
         print(f"  - {row.tableName}")
 
 dbutils.notebook.exit("SUCCESS")
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+

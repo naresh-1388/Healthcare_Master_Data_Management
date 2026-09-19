@@ -87,43 +87,32 @@ print(f"Source Identifiers: {len(source_identifiers)} items")
 # COMMAND ----------
 
 # DBTITLE 1,Run Canonical Pipeline
-# Fix: Remove conflicting LOAD_DATE mappings (create_mapped_data already adds Load_Date)
-spark.sql("""
-    DELETE FROM hmdm_dev.util.ctl_can_mapg
-    WHERE source_system_name = 'IQVIA_API'
-      AND LOWER(TRIM(src_attribute)) = 'load_date'
-      AND LOWER(TRIM(tgt_attribute)) = 'load_date'
-""")
-spark.sql("""
-    UPDATE hmdm_dev.util.ctl_batch_log_tbl
-    SET canonical_status = 'N'
-    WHERE source_system_name = 'IQVIA_API'
-""")
-print("Removed conflicting LOAD_DATE canonical mappings, reset canonical batch status")
-
-# Ensure imports are available even if cells were run out of order
-try:
-    env
-    catalog
-    get_notebook_run_url
-    main_canonical_pipeline
-    source_system_name
-    source_identifiers
-except NameError:
-    import sys, os
-    src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
-    from core.runtime_config import catalog, env, get_notebook_run_url
-    from canonical.canonical import main_canonical_pipeline
-    source_system_name = "IQVIA_API"
-    source_identifiers = ['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']
+# ----------------------------------------------------------------------------
+# Canonical Pipeline Execution
+# ----------------------------------------------------------------------------
+# Processes all 22 IQVIA_API entities through the canonical standardization
+# pipeline. Each entity is processed individually with skip_batch_update=True
+# so the batch status is updated only ONCE after all entities succeed.
+#
+# Note: The LOAD_DATE column collision fix is now permanently handled in
+# canonical.py::build_mapping_string() which skips any config mapping
+# targeting 'load_date' (case-insensitive) since create_mapped_data()
+# always adds current_timestamp() AS Load_Date.
+# ----------------------------------------------------------------------------
 
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 print(f"Source System: {source_system_name}")
 print(f"Source Identifiers: {source_identifiers}")
+
+# Reset canonical batch status to 'N' so we can reprocess (idempotent)
+spark.sql(f"""
+    UPDATE {catalog}.util.ctl_batch_log_tbl
+    SET canonical_status = 'N'
+    WHERE source_system_name = '{source_system_name}'
+""")
+print(f"Canonical batch status reset to 'N' for {source_system_name}")
 
 # Check if there are pending batches for canonical processing
 pending_count = spark.sql(f"""
@@ -139,7 +128,7 @@ if pending_count == 0:
 else:
     print(f"\nFound {pending_count} pending batch(es) - proceeding with canonical processing")
 
-# Process each source identifier
+# Process each source identifier through the canonical pipeline
 failures = []
 successes = []
 skipped = []
@@ -148,19 +137,23 @@ for source_identifier in source_identifiers:
         print(f"\n--- Canonicalizing {source_identifier} ---")
         
         # Set command-line arguments expected by main_canonical_pipeline
+        # sys.argv layout: [script, runtime, source_identifier, source_system_name, target_table_name]
         sys.argv = [
-            "notebook",              # script name (sys.argv[0])
-            "runtime",               # runtime (sys.argv[1]) 
-            source_identifier,       # source_identifier (sys.argv[2])
-            source_system_name,      # source_system_name (sys.argv[3])
-            source_identifier        # target_table_name (sys.argv[4])
+            "notebook",              # sys.argv[0] - script name
+            "runtime",               # sys.argv[1] - runtime mode
+            source_identifier,       # sys.argv[2] - source entity identifier
+            source_system_name,      # sys.argv[3] - source system name
+            source_identifier        # sys.argv[4] - target table name (same as source)
         ]
         
+        # Run canonical pipeline with skip_batch_update=True so batch status
+        # is only updated once after ALL entities have been processed
         main_canonical_pipeline(skip_batch_update=True)
         successes.append(source_identifier)
         print(f"  SUCCESS: {source_identifier}")
     except Exception as exc:
         exc_str = str(exc)
+        # Graceful exits (no data, no config) are expected for some entities
         if "Exiting gracefully" in exc_str or "No delta" in exc_str or "No canonical configuration" in exc_str or "No consolidated" in exc_str:
             print(f"  SKIPPED: {source_identifier} -> {exc_str}")
             skipped.append(source_identifier)

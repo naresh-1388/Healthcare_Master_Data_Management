@@ -16,7 +16,7 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source configuration identifier")
 dbutils.widgets.dropdown("entity_type", "HCP", ["HCP", "HCO"], "Entity type to ingress")
 dbutils.widgets.text(
@@ -113,18 +113,66 @@ print(f"Job run URL : {get_notebook_run_url()}")
 print(f"Entity type : {entity_type}")
 print(f"Tables      : {staging_tables}")
 
+staging_schema = f"{catalog}.staging"
+publish_schema = f"{catalog}.mdm"
+
+# Create MDM target tables if they don't exist (module refuses to create them)
+if entity_type == "HCP":
+    spark.sql(f"""
+        CREATE TABLE IF NOT EXISTS {publish_schema}.hcp (
+            individualEid STRING, firstName STRING, middleName STRING,
+            lastName STRING, countryCode STRING,
+            BATCH_ID STRING, LOAD_DATE TIMESTAMP, SOURCE_NAME STRING,
+            MDM_INGRESS_PROCESSED_AT TIMESTAMP
+        ) USING DELTA
+    """)
+else:
+    for tbl in ["hco_name", "hco_phone", "hco_specialty"]:
+        spark.sql(f"CREATE TABLE IF NOT EXISTS {publish_schema}.{tbl} (sourceSystem STRING, BATCH_ID STRING, LOAD_DATE TIMESTAMP, SOURCE_NAME STRING, MDM_INGRESS_PROCESSED_AT TIMESTAMP) USING DELTA")
+
+# HCP field mapping matching staging table columns
+HCP_FIELD_MAPPING = {
+    "iqvia_id": "individualEid",
+    "first_name": "firstName",
+    "middle_name": "middleName",
+    "last_name": "lastName",
+    "country_code": "countryCode",
+}
+
+# HCO target table map: logical target -> physical table name
+HCO_TARGET_TABLE_MAP = {
+    "hco_name": "hco_name",
+    "hco_phone": "hco_phone",
+    "hco_specialty": "hco_specialty",
+}
+
 failures = []
 rows_written = 0
 for source_table in staging_tables:
+    source_table_fqn = f"{staging_schema}.{source_table}"
     try:
-        print(f"\n--- Ingress: {source_table} -> MDM.{entity_type} ---")
-        count = run_mdm_ingress(
-            spark=spark,
-            source_identifier=source_identifier,
-            source_system_name=source_system_name,
-            source_table=source_table,
-            entity_type=entity_type,
-        )
+        print(f"\n--- Ingress: {source_table_fqn} -> MDM.{entity_type} ---")
+        if entity_type == "HCP":
+            count = run_mdm_ingress(
+                spark=spark,
+                source_identifier=source_identifier,
+                source_system_name=source_system_name,
+                source_table=source_table_fqn,
+                entity_type=entity_type,
+                publish_schema=publish_schema,
+                target_table="hcp",
+                field_mapping=HCP_FIELD_MAPPING,
+            )
+        else:
+            count = run_mdm_ingress(
+                spark=spark,
+                source_identifier=source_identifier,
+                source_system_name=source_system_name,
+                source_table=source_table_fqn,
+                entity_type=entity_type,
+                publish_schema=publish_schema,
+                target_table_map=HCO_TARGET_TABLE_MAP,
+            )
         print(f"rows written: {count}")
         rows_written += count or 0
     except Exception as exc:  # noqa: BLE001

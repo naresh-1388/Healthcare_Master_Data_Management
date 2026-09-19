@@ -661,6 +661,18 @@ def build_mapping_string(mapping_df):
             if not tgt_attribute:
                 continue
 
+            # Skip config mappings that target 'load_date' (any case).
+            # create_mapped_data() always adds current_timestamp() AS
+            # Load_Date, so a config mapping to load_date would cause a
+            # case-insensitive column collision in Spark.
+            if tgt_attribute.strip().lower() == "load_date":
+                logger.info(
+                    f"Skipping canonical mapping "
+                    f"{src_attribute}->{tgt_attribute} "
+                    f"(collides with Load_Date)"
+                )
+                continue
+
             if src_attribute is None:
 
                 expression = (
