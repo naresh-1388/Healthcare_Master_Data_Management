@@ -1,0 +1,5 @@
+# boto3 is already provided by the Lambda Python runtime - do NOT bundle
+# it (bloats the package for no benefit, and can shadow the runtime's
+# own boto3 with an incompatible version). requests is NOT provided by
+# the runtime, so it must be bundled.
+requests==2.31.*

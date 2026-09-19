@@ -51,43 +51,52 @@ timeout = int(dbutils.widgets.get("stage_timeout_seconds"))
 # COMMAND ----------
 
 # DBTITLE 1,Run pipeline stages
-# Base path for all pipeline notebooks
-base_path = "/Users/naresh.mayari@gmail.com/Healthcare_Master_Data_Management/Databricks"
+# NOTE: notebook names below are relative paths - dbutils.notebook.run()
+# resolves them relative to THIS notebook's own folder, so this works
+# regardless of which user/workspace path the repo is checked out under.
+# (An earlier version of this cell hard-coded an absolute
+# /Users/<personal-email>/... path, which only worked in that one
+# person's workspace - avoid re-introducing that.)
 
 print("STAGE 1/6: Source -> Raw ingestion")
-dbutils.notebook.run(f"{base_path}/03_Ingestion_SrcToRaw", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
+dbutils.notebook.run("03_Ingestion_SrcToRaw", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 2/6: Raw -> Landing standardization")
-dbutils.notebook.run(f"{base_path}/04_Standardization_RawToLand", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
+dbutils.notebook.run("04_Standardization_RawToLand", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 3/6: Canonical standardization")
-dbutils.notebook.run(f"{base_path}/05_Canonical_Standardization", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
+dbutils.notebook.run("05_Canonical_Standardization", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
 print("STAGE 4/6: Landing -> Staging data quality")
 dbutils.notebook.run(
-    f"{base_path}/06_DataQuality_LandToStage",
+    "06_DataQuality_LandToStage",
     timeout,
-    {"source_system_name": source_system_name, "source_identifiers": ""},
+    # NOTE: 06 reads "source_identifier" (singular) and "batch_id" - not
+    # "source_identifiers" (plural, that name belongs to 03/04/05 only).
+    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "batch_id": batch_id},
 )
 
 print("STAGE 5/6: MDM Ingress (HCP, then HCO)")
 dbutils.notebook.run(
-    f"{base_path}/07_MDM_Ingress", timeout,
-    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCP"},
+    "07_MDM_Ingress", timeout,
+    # NOTE: 07 reads "source_identifier" (singular), not "source_identifiers".
+    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCP"},
 )
 dbutils.notebook.run(
-    f"{base_path}/07_MDM_Ingress", timeout,
-    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCO"},
+    "07_MDM_Ingress", timeout,
+    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCO"},
 )
 
 print("STAGE 6/6: MDM Egress (HCP Master, then HCO Master)")
 dbutils.notebook.run(
-    f"{base_path}/08_MDM_Egress", timeout,
-    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCP"},
+    "08_MDM_Egress", timeout,
+    # NOTE: 08 has no "source_identifier(s)" widget at all - it reads
+    # "batch_id" and "write_mode" instead.
+    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCP"},
 )
 dbutils.notebook.run(
-    f"{base_path}/08_MDM_Egress", timeout,
-    {"source_system_name": source_system_name, "source_identifiers": "", "entity_type": "HCO"},
+    "08_MDM_Egress", timeout,
+    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCO"},
 )
 
 # COMMAND ----------

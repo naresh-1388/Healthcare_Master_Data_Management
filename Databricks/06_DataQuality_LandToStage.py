@@ -19,7 +19,7 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source configuration identifier (for control-table rule lookup)")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest pending batch per table)")
 
@@ -36,11 +36,18 @@ batch_id = int(batch_id_param) if batch_id_param.strip() else None
 
 import sys
 import os
+import importlib
 
 # Add src directory to Python path
 src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+
+# Force reload to pick up latest code changes
+import dq.data_quality
+import core.runtime_config
+importlib.reload(dq.data_quality)
+importlib.reload(core.runtime_config)
 
 from dq.data_quality import main_data_quality_pipeline, get_rules_for_source, get_rules
 from core.runtime_config import catalog, env, get_notebook_run_url
@@ -95,28 +102,103 @@ print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 
-source_tables = sorted({rule.source_table for rule in get_rules()})
-print(f"Source tables with configured DQ rules: {source_tables}")
+# Get bare table names from DQ rules
+bare_source_tables = sorted({rule.source_table for rule in get_rules()})
+print(f"Source tables with configured DQ rules: {bare_source_tables}")
+
+# Construct fully qualified table names for landing layer
+landing_schema = f"{catalog}.landing"
+staging_schema = f"{catalog}.staging"
+
+# Reference table mapping: each entity -> its parent/reference table for DQ checks
+# (name tables reference their address table for completeness check;
+#  address tables reference name tables for MDR check;
+#  child tables reference their name table for MDR check)
+REFERENCE_TABLE_MAP = {
+    "hcp_name":              "hcp_address",
+    "hco_name":              "hco_address",
+    "hcp_address":           "hcp_name",
+    "hco_address":           "hco_name",
+    "hcp_email":              "hcp_name",
+    "hcp_alternate_name":     "hcp_name",
+    "hcp_identification":     "hcp_name",
+    "hcp_specialty":           "hcp_name",
+    "hcp_phone":              "hcp_name",
+    "hcp_education":           "hcp_name",
+    "hcp_origin_university":   "hcp_name",
+    "hcp_tax":                "hcp_name",
+    "hcp_tendencies":          "hcp_name",
+    "hcp_language":            "hcp_name",
+    "hco_email":              "hco_name",
+    "hco_alternate_name":     "hco_name",
+    "hco_identification":     "hco_name",
+    "hco_specialty":           "hco_name",
+    "hco_phone":              "hco_name",
+    "hco_tax":                "hco_name",
+    "hcp_hco_affiliation":    "hcp_name",
+    "hco_hco_hierarchy":       "hco_name",
+}
+
+# DQ metadata columns added by the pipeline (must be dropped before staging write)
+DQ_METADATA_COLS = ["DQ_RULE", "DQ_STATUS", "DQ_DESCRIPTION", "DQ_APPL_COLUMN", "DQ_PROCESSED_AT"]
+
+# Reset DQ batch status to 'N' for this source system so we can reprocess
+spark.sql(f"""
+    UPDATE {catalog}.util.ctl_batch_log_tbl
+    SET dq_status = 'N'
+    WHERE source_system_name = '{source_system_name}'
+""")
+print(f"DQ batch status reset to 'N' for {source_system_name}")
 
 failures = []
-for source_table in source_tables:
-    target_table = next(
-        (r.target_table for r in get_rules_for_source(source_table)),
-        source_table,
-    )
+succeeded = 0
+for bare_table in bare_source_tables:
+    # Construct fully qualified source and target table names
+    source_table_fqn = f"{landing_schema}.{bare_table}"
+    target_table_fqn = f"{staging_schema}.{bare_table}"
+    
+    # Resolve reference table for this entity
+    ref_bare = REFERENCE_TABLE_MAP.get(bare_table)
+    ref_table_fqn = f"{landing_schema}.{ref_bare}" if ref_bare else None
+    
     try:
-        print(f"\n--- DQ: {source_table} -> {target_table} ---")
+        print(f"\n--- DQ: {source_table_fqn} -> {target_table_fqn} (ref={ref_table_fqn}) ---")
         passed_df, rejected_df = main_data_quality_pipeline(
             source_identifier=source_identifier,
-            source_table=source_table,
+            source_table=source_table_fqn,
             source_system_name=source_system_name,
-            reference_table=None,  # resolved internally per-rule where required
+            reference_table=ref_table_fqn,
             batch_id=batch_id,
+            skip_batch_update=True,
         )
-        print(f"passed={passed_df.count()} rejected={rejected_df.count()}")
+        passed_count = passed_df.count()
+        rejected_count = rejected_df.count()
+        print(f"  passed={passed_count} rejected={rejected_count}")
+        
+        # Write passed rows to staging table (drop DQ metadata columns)
+        staging_cols = [c for c in passed_df.columns if c not in DQ_METADATA_COLS]
+        staging_df = passed_df.select(*staging_cols)
+        
+        (spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table_fqn} USING DELTA AS SELECT * FROM {landing_schema}.{bare_table} WHERE 1=0")
+         if not spark.catalog.tableExists(target_table_fqn) else None)
+        
+        staging_df.write.format("delta").mode("overwrite").saveAsTable(target_table_fqn)
+        print(f"  SUCCESS: {bare_table} -> {target_table_fqn} ({passed_count} rows)")
+        succeeded += 1
     except Exception as exc:  # noqa: BLE001
-        print(f"FAILED: {source_table} -> {exc}")
-        failures.append((source_table, str(exc)))
+        print(f"  FAILED: {bare_table} -> {exc}")
+        failures.append((bare_table, str(exc)))
+
+# Update DQ batch status to 'Y' once after all entities
+if not failures:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET dq_status = 'Y'
+        WHERE source_system_name = '{source_system_name}'
+    """)
+    print(f"\nDQ batch status updated to 'Y' for {source_system_name}")
+
+print(f"\nSummary: {succeeded} succeeded, {len(failures)} failed")
 
 # COMMAND ----------
 
@@ -137,5 +219,13 @@ if failures:
             print(f"  - {tbl}")
         print("\nThis is expected if upstream pipeline stages have not run yet.")
         print("Run the ingestion and standardization notebooks first to create these tables.")
+else:
+    print("\nAll entities processed successfully through DQ validation.")
+    
+    # Show staging tables created
+    staging_tables = spark.sql(f"SHOW TABLES IN {catalog}.staging").collect()
+    print(f"\nStaging tables: {len(staging_tables)}")
+    for row in staging_tables:
+        print(f"  - {row.tableName}")
 
 dbutils.notebook.exit("SUCCESS")

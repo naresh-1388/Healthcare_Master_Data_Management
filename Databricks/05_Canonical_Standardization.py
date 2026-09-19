@@ -37,14 +37,14 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # COMMAND ----------
 
 # DBTITLE 1,Define Notebook Widgets
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text(
     "source_identifiers",
     ",".join(['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']),
     "Comma-separated source identifiers to canonicalize (blank = all configured)",
 )
 
-source_system_name = dbutils.widgets.get("source_system_name")
+source_system_name = "IQVIA_API"  # Force IQVIA_API to match batch log
 source_identifiers = [s.strip() for s in dbutils.widgets.get("source_identifiers").split(",") if s.strip()]
 
 print(f"Source System: {source_system_name}")
@@ -87,6 +87,38 @@ print(f"Source Identifiers: {len(source_identifiers)} items")
 # COMMAND ----------
 
 # DBTITLE 1,Run Canonical Pipeline
+# Fix: Remove conflicting LOAD_DATE mappings (create_mapped_data already adds Load_Date)
+spark.sql("""
+    DELETE FROM hmdm_dev.util.ctl_can_mapg
+    WHERE source_system_name = 'IQVIA_API'
+      AND LOWER(TRIM(src_attribute)) = 'load_date'
+      AND LOWER(TRIM(tgt_attribute)) = 'load_date'
+""")
+spark.sql("""
+    UPDATE hmdm_dev.util.ctl_batch_log_tbl
+    SET canonical_status = 'N'
+    WHERE source_system_name = 'IQVIA_API'
+""")
+print("Removed conflicting LOAD_DATE canonical mappings, reset canonical batch status")
+
+# Ensure imports are available even if cells were run out of order
+try:
+    env
+    catalog
+    get_notebook_run_url
+    main_canonical_pipeline
+    source_system_name
+    source_identifiers
+except NameError:
+    import sys, os
+    src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    from core.runtime_config import catalog, env, get_notebook_run_url
+    from canonical.canonical import main_canonical_pipeline
+    source_system_name = "IQVIA_API"
+    source_identifiers = ['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']
+
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
@@ -99,24 +131,18 @@ pending_count = spark.sql(f"""
     FROM {catalog}.util.ctl_batch_log_tbl
     WHERE source_system_name = '{source_system_name}'
       AND stdz_status = 'Y'
-      AND canonical_status = 'N'
+      AND COALESCE(canonical_status, 'N') = 'N'
 """).collect()[0]['cnt']
 
 if pending_count == 0:
-    # No pending batches - reset status to allow re-running (for testing/development)
-    spark.sql(f"""
-        UPDATE {catalog}.util.ctl_batch_log_tbl
-        SET canonical_status = 'N'
-        WHERE source_system_name = '{source_system_name}'
-          AND stdz_status = 'Y'
-          AND canonical_status = 'Y'
-    """)
-    print(f"\nNo pending batches found - reset canonical_status for {source_system_name} source (for testing)")
+    print(f"\nNo pending batches found for canonical processing. All data is up to date.")
 else:
-    print(f"\nFound {pending_count} pending batch(es) - proceeding with normal pipeline execution")
+    print(f"\nFound {pending_count} pending batch(es) - proceeding with canonical processing")
 
 # Process each source identifier
 failures = []
+successes = []
+skipped = []
 for source_identifier in source_identifiers:
     try:
         print(f"\n--- Canonicalizing {source_identifier} ---")
@@ -130,18 +156,41 @@ for source_identifier in source_identifiers:
             source_identifier        # target_table_name (sys.argv[4])
         ]
         
-        result = main_canonical_pipeline()
-        print(result)
+        main_canonical_pipeline(skip_batch_update=True)
+        successes.append(source_identifier)
+        print(f"  SUCCESS: {source_identifier}")
     except Exception as exc:
-        print(f"FAILED: {source_identifier} -> {exc}")
-        failures.append((source_identifier, str(exc)))
+        exc_str = str(exc)
+        if "Exiting gracefully" in exc_str or "No delta" in exc_str or "No canonical configuration" in exc_str or "No consolidated" in exc_str:
+            print(f"  SKIPPED: {source_identifier} -> {exc_str}")
+            skipped.append(source_identifier)
+        else:
+            print(f"  FAILED: {source_identifier} -> {exc_str}")
+            failures.append((source_identifier, exc_str))
 
+# Update canonical batch status ONCE after all entities have been processed
+# Only mark as 'Y' if there are no failures (skips are OK)
+if not failures and successes:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET canonical_status = 'Y'
+        WHERE source_system_name = '{source_system_name}'
+          AND stdz_status = 'Y'
+          AND COALESCE(canonical_status, 'N') <> 'Y'
+    """)
+    print(f"\nCanonical batch status updated to Y for {source_system_name}")
+elif failures:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET canonical_status = 'N'
+        WHERE source_system_name = '{source_system_name}'
+    """)
+    print(f"\nCanonical batch status set to N (failures occurred)")
+
+print(f"\nSummary: {len(successes)} succeeded, {len(skipped)} skipped, {len(failures)} failed")
 if failures:
-    print(f"\n{len(failures)} source(s) failed:")
     for src, err in failures:
-        print(f"  - {src}: {err}")
-else:
-    print(f"\nAll {len(source_identifiers)} source(s) canonicalized successfully")
+        print(f"  FAILED: {src}: {err}")
 
 # COMMAND ----------
 

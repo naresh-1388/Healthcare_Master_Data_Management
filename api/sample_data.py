@@ -24,8 +24,6 @@ from models import (
 
 hcp_sample = HCPResponse(
 
-    batchId="BATCH_20260803_001",
-
     individual=Individual(
 
         individualEid="HCP100001",
@@ -157,8 +155,6 @@ hcp_sample = HCPResponse(
 # ==========================================================
 
 hco_sample = HCOResponse(
-
-    batchId="BATCH_20260803_001",
 
     organization=Organization(
 

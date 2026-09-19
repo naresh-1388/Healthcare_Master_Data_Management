@@ -264,7 +264,7 @@ def log_event_detail(
             f"""
             INSERT INTO {log_tbl_nm}
             VALUES (
-                {run_id},
+                '{run_id}',
                 '{source_identifier}',
                 '{source_system_name}',
                 {job_id},

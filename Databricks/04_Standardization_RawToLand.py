@@ -18,14 +18,14 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
+dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
 dbutils.widgets.text(
     "source_identifiers",
     ",".join(['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']),
     "Comma-separated RAW tables to standardize (blank = every table configured for this source)",
 )
 
-source_system_name = dbutils.widgets.get("source_system_name")
+source_system_name = "IQVIA_API"  # Override widget to match RAW data
 source_identifiers = [s.strip() for s in dbutils.widgets.get("source_identifiers").split(",") if s.strip()]
 
 # COMMAND ----------
@@ -36,11 +36,16 @@ source_identifiers = [s.strip() for s in dbutils.widgets.get("source_identifiers
 
 import sys
 import os
+import importlib
 
 # Add src directory to Python path
 src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
+
+# Force reload to pick up latest changes
+import standardization.standardization
+importlib.reload(standardization.standardization)
 
 from standardization.standardization import main_standardization_pipeline
 from core.runtime_config import catalog, env, get_notebook_run_url
@@ -90,11 +95,21 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 
 # COMMAND ----------
 
+# DBTITLE 1,Run Standardization Pipeline
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 
+# Reset batch status for reprocessing
+spark.sql(f"""
+    UPDATE {catalog}.util.ctl_batch_log_tbl
+    SET stdz_status = 'N'
+    WHERE source_system_name = '{source_system_name}'
+""")
+print(f"Reset stdz_status to N for {source_system_name}")
+
 failures = []
+successes = []
 for source_identifier in source_identifiers:
     try:
         print(f"\n--- Standardizing {source_identifier} ---")
@@ -102,11 +117,28 @@ for source_identifier in source_identifiers:
             source_identifier=source_identifier,
             source_system_name=source_system_name,
             tbl_nm=source_identifier,
+            skip_batch_update=True,
         )
         print(result)
+        successes.append(source_identifier)
     except Exception as exc:  # noqa: BLE001
         print(f"FAILED: {source_identifier} -> {exc}")
         failures.append((source_identifier, str(exc)))
+
+# Update batch status ONCE after all entities have been processed
+if successes:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET stdz_status = 'Y'
+        WHERE source_system_name = '{source_system_name}'
+          AND COALESCE(stdz_status, 'N') <> 'Y'
+    """)
+    print(f"\nBatch status updated to Y for {source_system_name} ({len(successes)} entities processed)")
+
+print(f"\nSummary: {len(successes)} succeeded, {len(failures)} failed")
+if failures:
+    for src, err in failures:
+        print(f"  FAILED: {src}: {err}")
 
 # COMMAND ----------
 

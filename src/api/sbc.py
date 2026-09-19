@@ -28,6 +28,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import boto3
 import requests
@@ -827,8 +828,14 @@ def call_api_with_retry(
     Call MDM_HUB/IQVIA API with retry behavior from the source.
 
     NOTE:
-        The MDM_HUB login endpoint in the supplied source is a placeholder.
-        It is intentionally preserved here.
+        The MDM_HUB login endpoint in the supplied source was a literal
+        "https://<MDM_HUB_HOST>/..." placeholder - never a real URL.
+        Fixed to derive the real host from `url` (the configured
+        MDM_HUB_URL, which is itself a full search/lookup endpoint with
+        its own path) via urlparse, so the login call goes to the same
+        host without inheriting `url`'s own path suffix. If your real
+        Informatica MDM Hub uses a different login path than the SIF
+        default below, override it with the MDM_HUB_LOGIN_PATH env var.
     """
     try:
         logger.info(
@@ -837,9 +844,16 @@ def call_api_with_retry(
 
         if api_name == "MDM_HUB":
 
+            parsed_url = urlparse(url)
+            mdm_hub_host = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            mdm_hub_login_url = (
+                f"{mdm_hub_host}"
+                f"{os.getenv('MDM_HUB_LOGIN_PATH', '/sas/public/core/v3/login')}"
+            )
+
             session_response = requests.request(
                 "POST",
-                "https://<MDM_HUB_HOST>/sas/public/core/v3/login",
+                mdm_hub_login_url,
                 headers={
                     "Accept": CONTENT_TYPE,
                     "Content-Type": CONTENT_TYPE,

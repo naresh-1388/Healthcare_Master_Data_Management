@@ -13,6 +13,7 @@ externalId routing:
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -115,7 +116,7 @@ def validate_request_payload(
                 ),
             }
         )
-    elif mdm_entity.upper() != "HCP":
+    elif mdm_entity.upper() not in ("HCP", "HCO"):
         errors.append(
             {
                 "field_path": "mdmEntityType",
@@ -225,11 +226,18 @@ def call_api_with_retry(
                     mdm_hub_id,
                 )
 
-                # Endpoint intentionally preserved from supplied
-                # source as a deployment-supplied value.
+                # BUGFIX: this was a literal "XXXX..." placeholder -
+                # never a real URL. Built from the same `url` (base MDM
+                # Hub URL) already passed into this function, with the
+                # login path suffix overridable via env var in case your
+                # real Informatica MDM Hub uses a different path than the
+                # common SIF default.
+                mdm_hub_login_url = (
+                    f"{url}{os.getenv('MDM_HUB_LOGIN_PATH', '/security/login')}"
+                )
                 session_response = requests.request(
                     "POST",
-                    "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                    mdm_hub_login_url,
                     headers={
                         "Accept": CONTENT_TYPE,
                         "Content-Type": CONTENT_TYPE,
@@ -285,11 +293,20 @@ def call_api_with_retry(
                 iqvia_id,
             )
 
+            # BUGFIX: this was a literal "XXXX..." placeholder - never a
+            # real auth header. Built as HTTP Basic Auth from the
+            # IQVIA_USERNAME/IQVIA_PASSWORD already loaded from Secrets
+            # Manager (see load_runtime_credentials()). If your real
+            # IQVIA contract uses Bearer-token auth instead, swap this
+            # for `f"Bearer {IQVIA_PASSWORD}"` (or whatever token field
+            # your IQVIA subscription actually issues).
+            iqvia_basic_auth = base64.b64encode(
+                f"{IQVIA_USERNAME}:{IQVIA_PASSWORD}".encode()
+            ).decode()
+
             iqvia_headers = {
                 "Content-Type": CONTENT_TYPE,
-                "Authorization": (
-                    "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-                ),
+                "Authorization": f"Basic {iqvia_basic_auth}",
             }
 
             if not iqvia_id or len(iqvia_id) < 3:
@@ -360,11 +377,23 @@ def transform_mdm_hub_download_response(
 
         phones = []
 
-        for phone in raw.get("X_phone") or []:
+        # BUGFIX: this previously read "X_phone", but
+        # transform_iqvia_to_mdm_hub_post() (the function that builds the
+        # payload landed here) writes the key as "Phone" - matching the
+        # MDM.HCP ingest attribute name already established in the
+        # HMDM_DEV mapping workbook's Stg_MDM_Ingress-HCP sheet. Also
+        # reading the actual field names that function produces
+        # (phoneNumber/iso/phoneType) rather than X_-prefixed ones it
+        # never wrote. Extension/format/status/usage-type/effective-date
+        # fields below still read a key transform_iqvia_to_mdm_hub_post()
+        # does not currently populate from the IQVIA source at all - that
+        # is a separate, missing-field-mapping gap, not a naming bug, and
+        # is left as-is rather than inventing source data for it.
+        for phone in raw.get("Phone") or []:
             phones.append(
                 {
                     "Phone Number": phone.get(
-                        "X_phone_number",
+                        "phoneNumber",
                         "",
                     ),
                     "Phone Number Extension": phone.get(
@@ -380,7 +409,7 @@ def transform_mdm_hub_download_response(
                         "",
                     ),
                     "ISO": phone.get(
-                        "X_iso",
+                        "iso",
                         "",
                     ),
                     "Phone Status": phone.get(
@@ -393,10 +422,10 @@ def transform_mdm_hub_download_response(
                     ),
                     "Phone Type": {
                         "Code": (
-                            phone.get("X_phone_type") or {}
+                            phone.get("phoneType") or {}
                         ).get("Code", ""),
                         "Name": (
-                            phone.get("X_phone_type") or {}
+                            phone.get("phoneType") or {}
                         ).get("Name", ""),
                     },
                     "Phone Usage Type": {
@@ -706,7 +735,16 @@ def transform_mdm_hub_download_response(
 
         emails = []
 
-        for email in raw.get("X_email") or []:
+        # BUGFIX: this previously read "X_email", but
+        # transform_iqvia_to_mdm_hub_post() writes the key as
+        # "ElectronicAddress" (matching the MDM.HCP ingest attribute name
+        # in the HMDM_DEV mapping workbook). NOTE: that function currently
+        # always writes ElectronicAddress as an empty list - it has no
+        # email-extraction logic from the IQVIA source at all yet, so
+        # this list will still come back empty until that separate gap is
+        # filled in; this fix only corrects the key name so email data
+        # will flow through correctly once that population logic exists.
+        for email in raw.get("ElectronicAddress") or []:
             emails.append(
                 {
                     "Email": email.get(
@@ -1534,9 +1572,15 @@ def post_mdm_hub_entity(
 ) -> dict[str, Any]:
     """Create an MDM_HUB entity using a IQVIA source key."""
     try:
+        # BUGFIX: this was a literal "XXXX..." placeholder - same fix as
+        # the one in call_api_with_retry() above, using this function's
+        # own `base_url` parameter.
+        mdm_hub_login_url = (
+            f"{base_url}{os.getenv('MDM_HUB_LOGIN_PATH', '/security/login')}"
+        )
         session_response = requests.request(
             "POST",
-            "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            mdm_hub_login_url,
             headers={
                 "Accept": CONTENT_TYPE,
                 "Content-Type": CONTENT_TYPE,

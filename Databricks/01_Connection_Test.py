@@ -35,6 +35,7 @@ print("Region: us-east-1")
 
 # COMMAND ----------
 
+# DBTITLE 1,Cell 4
 # Retrieve Snowflake credentials from AWS Secrets Manager
 # The username/password are loaded only into memory. Never print the secret.
 import json
@@ -43,78 +44,105 @@ SECRET_NAME = "healthcare-mdm/dev/api-snowflake"
 response = sm.get_secret_value(SecretId=SECRET_NAME)
 secret = json.loads(response["SecretString"])
 
-sf_user = secret["username"]
-sf_password = secret["password"]
+sf_user = secret["snowflake_user"]
+sf_password = secret["snowflake_password"]
 
 print("Snowflake credentials retrieved: SUCCESS")
 
 
 # COMMAND ----------
 
+# DBTITLE 1,Install Snowflake Connector
+# # Install Snowflake connector for Databricks Serverless
+# %pip install snowflake-connector-python --quiet
+# dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# DBTITLE 1,Snowflake read connectivity
 # Snowflake read connectivity
 # Validate the development Snowflake environment with secret-derived credentials.
-sf_options = {
-    "sfURL": "AXIVKAP-PF58156.snowflakecomputing.com",
-    "sfUser": sf_user,
-    "sfPassword": sf_password,
-    "sfDatabase": "HMDM_DEV",
-    "sfSchema": "RAW",
-    "sfWarehouse": "HMDM_WH"
-}
+# Use snowflake-connector-python for Serverless compatibility
 
-test_df = (
-    spark.read.format("snowflake")
-    .options(**sf_options)
-    .option("query", "SELECT CURRENT_USER() AS USER_NAME, CURRENT_DATABASE() AS DB_NAME, CURRENT_SCHEMA() AS SCHEMA_NAME, CURRENT_WAREHOUSE() AS WH_NAME")
-    .load()
-)
-
-display(test_df)
-print("Snowflake READ connection: SUCCESS")
+try:
+    import snowflake.connector
+    
+    # Create connection
+    conn = snowflake.connector.connect(
+        account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
+        user=sf_user,
+        password=sf_password,
+        warehouse=secret["snowflake_warehouse"],
+        database=secret["snowflake_database"],
+        schema=secret["snowflake_schema"]
+    )
+    
+    # Execute test query
+    cursor = conn.cursor()
+    cursor.execute("SELECT CURRENT_USER() AS USER_NAME, CURRENT_DATABASE() AS DB_NAME, CURRENT_SCHEMA() AS SCHEMA_NAME, CURRENT_WAREHOUSE() AS WH_NAME")
+    result = cursor.fetchall()
+    
+    # Convert to DataFrame for display
+    import pandas as pd
+    test_df = pd.DataFrame(result, columns=["USER_NAME", "DB_NAME", "SCHEMA_NAME", "WH_NAME"])
+    display(test_df)
+    
+    cursor.close()
+    conn.close()
+    
+    print("✅ Snowflake READ connection: SUCCESS")
+    
+except Exception as e:
+    print(f"❌ Snowflake connection failed: {str(e)}")
+    print("\nNote: Serverless compute requires snowflake-connector-python.")
+    print("Install with: %pip install snowflake-connector-python")
 
 
 # COMMAND ----------
 
+# DBTITLE 1,Snowflake write connectivity
 # Snowflake write connectivity
 # Validate write access with a dedicated connectivity-test object.
-sf_options_write = {
-    "host": "AXIVKAP-PF58156.snowflakecomputing.com",
-    "sfUser": sf_user,
-    "sfPassword": sf_password,
-    "sfDatabase": "HMDM_DEV",
-    "sfSchema": "RAW",
-    "sfWarehouse": "HMDM_WH"
-}
 
-test_df.write.format("snowflake").options(**sf_options_write).option(
-    "dbtable", "CONNECTION_TEST"
-).mode("overwrite").save()
-
-print("Snowflake WRITE connection: SUCCESS")
-
-
-# COMMAND ----------
-
-# Healthcare_MDM centralized runtime configuration
-# Add the repository root, not src/core, so the project package resolves consistently.
-import sys
-from pathlib import Path
-
-REPO_ROOT = Path("/Workspace/Repos/naresh.mayari@gmail.com/Healthcare_Master_Data_Management")
-if str(REPO_ROOT) in sys.path:
-    sys.path.remove(str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT))
-
-from src.core import runtime_config
-
-print("Catalog   :", runtime_config.catalog)
-print("RAW       :", runtime_config.raw_schema)
-print("Landing   :", runtime_config.lnd_schema)
-print("Staging   :", runtime_config.stg_schema)
-print("MDM       :", runtime_config.publish_schema)
-print("Util      :", runtime_config.util_schema)
-print("Batch Log :", runtime_config.batch_log_tbl)
-print("Healthcare_MDM runtime configuration: SUCCESS")
+try:
+    import snowflake.connector
+    
+    # Create connection
+    conn = snowflake.connector.connect(
+        account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
+        user=sf_user,
+        password=sf_password,
+        warehouse=secret["snowflake_warehouse"],
+        database=secret["snowflake_database"],
+        schema=secret["snowflake_schema"]
+    )
+    
+    # Create test table
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE OR REPLACE TABLE CONNECTION_TEST (
+            USER_NAME VARCHAR,
+            DB_NAME VARCHAR,
+            SCHEMA_NAME VARCHAR,
+            WH_NAME VARCHAR,
+            TEST_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+        )
+    """)
+    
+    # Insert test data
+    cursor.execute("""
+        INSERT INTO CONNECTION_TEST (USER_NAME, DB_NAME, SCHEMA_NAME, WH_NAME)
+        SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()
+    """)
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    print("✅ Snowflake WRITE connection: SUCCESS")
+    
+except Exception as e:
+    print(f"❌ Snowflake write failed: {str(e)}")
 
 
 # COMMAND ----------

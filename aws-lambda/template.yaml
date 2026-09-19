@@ -1,0 +1,119 @@
+# ============================================================
+# Healthcare_Master_Data_Management - AWS SAM template
+#
+# Deploys src/api/download_api.py as a real AWS Lambda function, fronted
+# by an API Gateway REST endpoint with a required API key - matching the
+# architecture documented in download_api.docx exactly ("this is an AWS
+# Lambda API that acts as a bridge between IQVIA and Kokoro/Informatica
+# MDM").
+#
+# Deploy with: sam build && sam deploy --guided   (see README.md in this
+# folder for the full walkthrough).
+# ============================================================
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Healthcare MDM - HCP/HCO download bridge Lambda (IQVIA <-> Informatica MDM Hub)
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+  IqviaUrl:
+    Type: String
+    Description: Base URL of the IQVIA API (or your mock API's deployed URL, for testing)
+  MdmHubUrl:
+    Type: String
+    Description: Base URL of the Informatica MDM Hub / Kokoro API
+  SecretName:
+    Type: String
+    Default: healthcare-mdm/dev/api-credentials
+    Description: AWS Secrets Manager secret holding {username, password, iqvia_username, iqvia_password}
+  ApiKey:
+    Type: String
+    NoEcho: true
+    Description: >
+      Bearer token the Lambda's own authenticate_request() checks
+      (Authorization: Bearer <ApiKey>) - generate one with, e.g.,
+      `python3 -c "import secrets; print(secrets.token_hex(24))"`
+      and pass it via `sam deploy --parameter-overrides ApiKey=<value>`,
+      never commit the real value to git.
+
+Resources:
+  # Persistent store for the mock IQVIA-shaped API (api/store.py). Only
+  # needed if you deploy the mock API itself to Lambda too - if it still
+  # runs on your laptop via `uvicorn`, api/store.py automatically falls
+  # back to an in-memory dict and this table is simply unused.
+  MockApiTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: healthcare-mdm-mock-api
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+
+  DownloadApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub healthcare-mdm-download-api-${Environment}
+      CodeUri: ./package/
+      Handler: download_api.lambda_handler
+      Runtime: python3.12
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          api_key: !Ref ApiKey
+          base_MDM_HUB_url: !Ref MdmHubUrl
+          iqvia_url: !Ref IqviaUrl
+          region: !Ref AWS::Region
+          secret_name: !Ref SecretName
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}*"
+      Events:
+        DownloadApi:
+          Type: Api
+          Properties:
+            Path: /hcp
+            Method: post
+            RestApiId: !Ref DownloadApiGateway
+
+  DownloadApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Environment
+      Auth:
+        ApiKeyRequired: true
+      # NOTE: the Lambda code's own authenticate_request() ALSO checks a
+      # Bearer token in the Authorization header (see download_api.docx
+      # Step 2). Both layers are kept intentionally - API Gateway's
+      # x-api-key stops unauthenticated traffic from ever reaching the
+      # Lambda (saves cost); the Lambda's own Bearer check matches the
+      # real IQVIA-side contract exactly, in case a caller bypasses API
+      # Gateway entirely (e.g. an internal VPC Lambda-to-Lambda call).
+
+  DownloadApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: DownloadApiGatewayprodStage
+    Properties:
+      ApiStages:
+        - ApiId: !Ref DownloadApiGateway
+          Stage: !Ref Environment
+      Throttle:
+        RateLimit: 10
+        BurstLimit: 20
+
+Outputs:
+  ApiEndpoint:
+    Description: Invoke URL for the download API
+    Value: !Sub "https://${DownloadApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/hcp"
+  FunctionName:
+    Value: !Ref DownloadApiFunction
