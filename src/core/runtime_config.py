@@ -220,6 +220,16 @@ except Exception as e:
     s3_bucket = "healthcare-master-data-management"
     spark = None
 
+# Archive path for raw source file archiving (used by archive_file()
+# in data_io.py, called from src_to_raw_ingestion.py).  Resolved here
+# because it depends on s3_bucket which is only known after
+# environment detection.
+archive_path = os.getenv(
+    "HEALTHCARE_MDM_ARCHIVE_PATH",
+    f"s3://{s3_bucket}/healthcare-mdm/archieve/",
+)
+print(f"Archive Path : {archive_path}")
+
 
 # ============================================================
 # Schema Configuration
