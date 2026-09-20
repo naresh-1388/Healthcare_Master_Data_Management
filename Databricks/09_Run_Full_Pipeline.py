@@ -3,6 +3,7 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
+# DBTITLE 1,Title
 # MAGIC %md
 # MAGIC ### Healthcare_Master_Data_Management - Full Pipeline Orchestrator
 # MAGIC
@@ -19,24 +20,34 @@
 # MAGIC 2. `04_Standardization_RawToLand` (Raw -> Landing)
 # MAGIC 3. `05_Canonical_Standardization` (canonical code-list normalisation)
 # MAGIC 4. `06_DataQuality_LandToStage`   (Landing -> Staging, with DQ rules)
-# MAGIC 5. `07_MDM_Ingress` (HCP)         (Staging -> MDM.HCP)
-# MAGIC 6. `07_MDM_Ingress` (HCO)         (Staging -> MDM.HCO)
-# MAGIC 7. `08_MDM_Egress` (HCP)          (MDM.HCP -> HCP Master/downstream)
-# MAGIC 8. `08_MDM_Egress` (HCO)          (MDM.HCO -> HCO Master/downstream)
+# MAGIC 5. `07_MDM_Ingress` (BOTH)        (Staging -> MDM.HCP and MDM.HCO)
+# MAGIC 6. `08_MDM_Egress` (BOTH)         (MDM -> Master/downstream)
 
 # COMMAND ----------
 
+# DBTITLE 1,Widgets
 # MAGIC %md #### 1. Widgets
+# MAGIC
+# MAGIC Select the source system from the widget panel at the top of the notebook before running the full pipeline.
+# MAGIC
+# MAGIC * **Source System**: IQVIA_API (production pipeline)
+# MAGIC * **Batch ID**: Optional — blank means auto-detect at each stage
+# MAGIC * **Stage Timeout**: Per-stage timeout in seconds (default: 3600)
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
+# DBTITLE 1,Widget Setup
+dbutils.widgets.dropdown("source_system_name", "IQVIA_API", ["IQVIA_API"], "Source System")
 dbutils.widgets.text("batch_id", "", "Batch ID (blank = auto-detect pending batch at each stage)")
 dbutils.widgets.text("stage_timeout_seconds", "3600", "Per-stage timeout (seconds)")
 
 source_system_name = dbutils.widgets.get("source_system_name")
 batch_id = dbutils.widgets.get("batch_id")
 timeout = int(dbutils.widgets.get("stage_timeout_seconds"))
+
+print(f"Source System : {source_system_name}")
+print(f"Batch ID      : {batch_id or 'auto-detect'}")
+print(f"Stage Timeout : {timeout} seconds")
 
 # COMMAND ----------
 
@@ -76,32 +87,27 @@ dbutils.notebook.run(
     {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "batch_id": batch_id},
 )
 
-print("STAGE 5/6: MDM Ingress (HCP, then HCO)")
+print("STAGE 5/6: MDM Ingress (HCP + HCO)")
 dbutils.notebook.run(
     "07_MDM_Ingress", timeout,
     # NOTE: 07 reads "source_identifier" (singular), not "source_identifiers".
-    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCP"},
-)
-dbutils.notebook.run(
-    "07_MDM_Ingress", timeout,
-    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "HCO"},
+    {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "BOTH"},
 )
 
-print("STAGE 6/6: MDM Egress (HCP Master, then HCO Master)")
+print("STAGE 6/6: MDM Egress (HCP Master + HCO Master)")
 dbutils.notebook.run(
     "08_MDM_Egress", timeout,
     # NOTE: 08 has no "source_identifier(s)" widget at all - it reads
     # "batch_id" and "write_mode" instead.
-    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCP"},
-)
-dbutils.notebook.run(
-    "08_MDM_Egress", timeout,
-    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "HCO"},
+    {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "BOTH"},
 )
 
 # COMMAND ----------
 
+# DBTITLE 1,Result
 # MAGIC %md #### 3. Result
+# MAGIC
+# MAGIC If all 6 stages completed without error, exits with `SUCCESS`. Any stage failure raises an exception and stops the pipeline.
 
 # COMMAND ----------
 
