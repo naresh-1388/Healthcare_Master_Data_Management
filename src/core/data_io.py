@@ -117,10 +117,17 @@ def send_email(
     to_email,
     smtp_server,
     smtp_user,
+    smtp_password="",
+    smtp_port=587,
 ):
     """
     Send a plain-text alert email via SMTP (used for pipeline
     success/failure notifications).
+
+    Supports both unauthenticated relays (smtp_password="") and
+    authenticated SMTP (e.g. Gmail App Password).  Defaults to
+    port 587 with STARTTLS, which is the standard for Gmail and
+    most modern SMTP providers.
 
     Args:
         subject: Email subject. May be passed as a list of strings, in
@@ -132,6 +139,9 @@ def send_email(
         smtp_server: Hostname of the SMTP relay to send through.
         smtp_user: The "From" address / SMTP auth user. May be passed as a
             list, in which case only the first entry is used.
+        smtp_password: SMTP auth password (e.g. Gmail App Password).
+            Leave empty for unauthenticated internal relays.
+        smtp_port: SMTP port (default 587 for STARTTLS).
 
     Returns:
         None. Success or failure is only reported via print statements -
@@ -162,8 +172,10 @@ def send_email(
     msg["To"] = ", ".join(map(str, to_emails))
 
     try:
-        with smtplib.SMTP(smtp_server) as server:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
+            if smtp_password:
+                server.login(smtp_user, smtp_password)
             server.sendmail(
                 smtp_user,
                 to_emails,

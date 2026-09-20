@@ -113,3 +113,6 @@ dbutils.notebook.run(
 
 print("Full pipeline completed successfully.")
 dbutils.notebook.exit("SUCCESS")
+
+# COMMAND ----------
+

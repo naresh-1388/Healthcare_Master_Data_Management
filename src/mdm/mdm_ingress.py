@@ -1027,17 +1027,40 @@ HCO_INGRESS_MAPPING = [
 HCP_TARGET_TABLE = "hcp"
 # Development smoke-test mapping for the validated HCP canonical payload.
 DEV_HCP_FIELD_MAPPING = {
+    # hcp_name fields (staging.hcp_name)
     "iqvia_id": "individualEid",
     "first_name": "firstName",
     "middle_name": "middleName",
     "last_name": "lastName",
     "country_code": "countryCode",
+    "full_name": "fullName",
+    "gender": "gender",
+    "prefix": "prefixName",
+    "transparency_reporting_name": "X_transparency_reporting_name",
+    "status": "X_hcp_status",
+    "type": "X_infac360ls_type",
+    "jisb_title": "X_jisb_title",
+    # hcp_alternate_name fields
+    "alternate_name": "AlternateName",
+    # hcp_address fields
+    "address": "X_hcp_address",
+    # hcp_phone fields
+    "phone": "Phone",
+    # hcp_email fields
+    "email": "ElectronicAddress",
+    # hcp_specialty fields
+    "specialty": "X_infac360ls_Specialty",
+    "qualification": "Qualification",
+    # hcp_identification fields
+    "license_number": "X_infac360ls_License",
+    "dea_number": "X_infac360ls_dea",
+    "alternate_identifier": "AlternateIdentifier",
 }
 
 HCP_SOURCE_TO_MDM = {
     "hcp_name": "hcp", "hcp_specialty": "hcp_specialty",
-    "hcp_alternate_name": "hcp_alternate_name", "hcp_identification": "hcp_license",
-    "hcp_education": "hcp_therapeutic_area", "hcp_address": "hcp_address",
+    "hcp_alternate_name": "hcp_alternate_name", "hcp_identification": "hcp_identification",
+    "hcp_education": "hcp_education", "hcp_address": "hcp_address",
     "hcp_phone": "hcp_phone", "hcp_email": "hcp_email",
     "hcp_tendencies": "hcp_tendencies", "hcp_origin_university": "hcp_origin_university",
     "hcp_tax": "hcp_tax", "hcp_language": "hcp_language",
@@ -1340,11 +1363,37 @@ def write_prepared_ingress(
                 F.current_timestamp(),
             )
 
+        # ---------------------------------------------------------
+        # Delete existing rows for this batch (idempotency)
+        # ---------------------------------------------------------
+        # Before appending, remove any existing rows for the same
+        # batch_id from the target MDM table.  This prevents data
+        # multiplication when a batch is re-ingressed (e.g. after
+        # a retry or manual status reset).
+        # ---------------------------------------------------------
+
+        if spark.catalog.tableExists(qualified_target):
+            target_cols = {
+                c.upper() for c in spark.table(qualified_target).columns
+            }
+            if "BATCH_ID" in target_cols:
+                spark.sql(
+                    f"DELETE FROM {qualified_target} "
+                    f"WHERE BATCH_ID = {int(batch_id)}"
+                )
+                logger.info(
+                    "Idempotency delete: removed existing rows "
+                    "for batch %s from %s",
+                    batch_id,
+                    qualified_target,
+                )
+
         (
             output_df
             .write
             .format("delta")
             .mode("append")
+            .option("mergeSchema", "true")
             .saveAsTable(qualified_target)
         )
 

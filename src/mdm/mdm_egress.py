@@ -284,6 +284,7 @@ def write_egress(
         df.write
         .format("delta")
         .mode(mode)
+        .option("mergeSchema", "true")
         .saveAsTable(target_table)
     )
 
@@ -455,6 +456,27 @@ def process_egress_batch(
         source_system_name=source_system_name,
         batch_id=batch_id
     )
+
+    # -------------------------------------------------------------
+    # Delete existing rows for this batch (idempotency)
+    # -------------------------------------------------------------
+    # Before appending, remove any existing rows for the same
+    # batch_id from the target Master table.  This prevents data
+    # multiplication when a batch is re-egressed (e.g. after a
+    # retry or manual status reset).
+    # -------------------------------------------------------------
+
+    if write_mode == "append" and spark.catalog.tableExists(target_table):
+        target_cols = {c.upper() for c in spark.table(target_table).columns}
+        if "BATCH_ID" in target_cols:
+            spark.sql(
+                f"DELETE FROM {target_table} "
+                f"WHERE BATCH_ID = {int(batch_id)}"
+            )
+            print(
+                f"Idempotency delete: removed existing rows for "
+                f"batch {batch_id} from {target_table}"
+            )
 
     # -------------------------------------------------------------
     # Write

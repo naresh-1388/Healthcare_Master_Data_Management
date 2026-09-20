@@ -52,9 +52,27 @@ dbutils = None
 DEFAULT_ALERT_EMAILS = []
 
 email_config = {
-    "smtp_server": os.getenv("HEALTHCARE_MDM_SMTP_SERVER", ""),
-    "smtp_user": os.getenv("HEALTHCARE_MDM_SMTP_USER", ""),
+    "smtp_server": os.getenv("HEALTHCARE_MDM_SMTP_SERVER", "smtp.gmail.com"),
+    "smtp_user": os.getenv("HEALTHCARE_MDM_SMTP_USER", "naresh.mayari@gmail.com"),
+    "smtp_port": int(os.getenv("HEALTHCARE_MDM_SMTP_PORT", "587")),
 }
+
+# SMTP password is stored in Databricks secrets — never in env vars or code.
+# Secret scope "healthcare_mdm"  key "smtp_password"
+# To set it up:
+#   databricks secrets create-scope healthcare_mdm
+#   databricks secrets put-secret healthcare_mdm smtp_password --string-value <GMAIL_APP_PASSWORD>
+# In code:  dbutils.secrets.get("healthcare_mdm", "smtp_password")
+
+def _get_smtp_password():
+    """Retrieve SMTP password from Databricks secrets."""
+    try:
+        from pyspark.dbutils import DBUtils
+        _spark = SparkSession.builder.getOrCreate()
+        _dbutils = DBUtils(_spark)
+        return _dbutils.secrets.get("healthcare_mdm", "smtp_password")
+    except Exception:
+        return ""
 
 archive_path = os.getenv("HEALTHCARE_MDM_ARCHIVE_PATH")
 
@@ -169,52 +187,34 @@ def detect_environment(spark_session: SparkSession):
 # ============================================================
 # Initialize Spark + Environment
 # ============================================================
-# SERVERLESS WORKAROUND:
-#   Creating a new SparkSession here causes catalog context loss.
-#   For now, hardcode catalog values for DEV environment.
-#   In production (Job clusters), this would use detect_environment().
+# Detection strategy:
+#   1. Try to use the existing active SparkSession (does NOT create a
+#      new one) and call detect_environment() to resolve the correct
+#      catalog/env/s3_bucket from the workspace URL.
+#   2. If that fails (e.g. serverless edge cases, missing workspace URL,
+#      import-time issues), fall back to DEV defaults so the pipeline
+#      can still run in development without crashing.
+# This ensures production/job clusters get the CORRECT catalog (HMDM_PROD,
+# HMDM_TST) while serverless/dev falls back safely to HMDM_DEV.
 # ============================================================
 
 try:
-    # Check if we're on Serverless (via environment variable or compute ID)
-    import os
-    compute_id = os.getenv("DATABRICKS_RUNTIME_VERSION", "")
-    
-    # For Serverless, hardcode catalog to avoid SparkSession creation
-    # This preserves the catalog set in the calling notebook
-    is_serverless = True  # TODO: Detect properly in production
-    
-    if is_serverless:
-        # SERVERLESS: Hardcoded values (no new SparkSession!)
-        catalog = "hmdm_dev"  # Lowercase to match Unity Catalog
-        env = "dev"
-        mail_recipient = "dev"
-        s3_bucket = "healthcare-master-data-management"
-        spark = None  # Will be passed by caller
-        
-        print("[SERVERLESS MODE] Using hardcoded catalog configuration")
-        print(f"Catalog Name : {catalog}")
-        print(f"Environment  : {env}")
-        print(f"S3 Bucket    : {s3_bucket}")
-    else:
-        # PRODUCTION: Dynamic detection with new SparkSession
-        spark = SparkSession.builder.getOrCreate()
+    spark = SparkSession.builder.getOrCreate()
 
-        (
-            catalog,
-            env,
-            mail_recipient,
-            s3_bucket,
-        ) = detect_environment(spark)
+    (
+        catalog,
+        env,
+        mail_recipient,
+        s3_bucket,
+    ) = detect_environment(spark)
 
-        print(f"Catalog Name : {catalog}")
-        print(f"Environment  : {env}")
-        print(f"S3 Bucket    : {s3_bucket}")
+    print(f"Catalog Name : {catalog}")
+    print(f"Environment  : {env}")
+    print(f"S3 Bucket    : {s3_bucket}")
 
 except Exception as e:
-    print(f"Environment initialization skipped: {e}")
-    # Fallback to DEV defaults
-    catalog = "hmdm_dev"  # Lowercase to match Unity Catalog
+    print(f"Environment detection failed, using DEV fallback: {e}")
+    catalog = "hmdm_dev"
     env = "dev"
     mail_recipient = "dev"
     s3_bucket = "healthcare-master-data-management"
@@ -617,3 +617,196 @@ def get_maillist(source_name):
     )
 
     return emails, tables
+
+
+# ============================================================
+# S3 Timestamp Checkpoint Functions
+# ============================================================
+# Implements the batch control checkpoint mechanism documented in
+# Start_file.docx: execution timestamps are written to S3 as
+# checkpoint files, so the next pipeline run can determine the
+# incremental window by reading the previous execution's end
+# timestamp.
+# ============================================================
+
+from datetime import datetime as _datetime
+
+
+def _get_dbutils_for_s3():
+    """Get dbutils for S3 file operations."""
+    try:
+        from pyspark.dbutils import DBUtils
+        _spark = SparkSession.builder.getOrCreate()
+        return DBUtils(_spark)
+    except Exception:
+        return None
+
+
+def _s3_timestamp_path(source_system_name):
+    """Build the S3 path for a source system's timestamp file."""
+    return (
+        f"s3://{s3_bucket}/healthcare-mdm/batch_control/"
+        f"timestamps/{source_system_name.lower()}_timestamp.txt"
+    )
+
+
+def write_s3_timestamp(source_system_name, start_timestamp=None, end_timestamp=None):
+    """
+    Write the pipeline execution timestamps to S3 as a checkpoint
+    file.
+
+    Called after a pipeline run completes so the next run can read
+    the previous execution window and process only changed records.
+
+    Args:
+        source_system_name: The source system (e.g. "IQVIA_API").
+        start_timestamp: Batch start timestamp.  If None, uses
+            "1900-01-01 00:00:00" (full-load sentinel — every record
+            satisfies > 1900).
+        end_timestamp: Batch end timestamp.  If None, uses current
+            timestamp.
+
+    Returns:
+        str: The S3 path where the timestamp file was written, or
+        None on failure.
+    """
+    if start_timestamp is None:
+        start_timestamp = "1900-01-01 00:00:00"
+    if end_timestamp is None:
+        end_timestamp = _datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    _dbutils = _get_dbutils_for_s3()
+    if _dbutils is None:
+        print("WARNING: dbutils not available. S3 timestamp not written.")
+        return None
+
+    file_path = _s3_timestamp_path(source_system_name)
+    source_upper = source_system_name.upper().replace("-", "_").replace(" ", "_")
+    content = (
+        f"{source_upper}_START_TIMESTAMP\n{start_timestamp}\n"
+        f"{source_upper}_END_TIMESTAMP\n{end_timestamp}\n"
+    )
+
+    try:
+        _dbutils.fs.put(file_path, content, overwrite=True)
+        print(f"S3 timestamp checkpoint written: {file_path}")
+        print(f"  Start: {start_timestamp}")
+        print(f"  End:   {end_timestamp}")
+        return file_path
+    except Exception as e:
+        print(f"WARNING: Failed to write S3 timestamp: {e}")
+        return None
+
+
+def get_s3_timestamp(source_system_name):
+    """
+    Read the previous pipeline execution timestamps from S3.
+
+    Called at the start of a pipeline run to determine the incremental
+    window: only records modified after the previous end_timestamp
+    should be processed.
+
+    Args:
+        source_system_name: The source system (e.g. "IQVIA_API").
+
+    Returns:
+        tuple: (start_timestamp, end_timestamp) as strings.
+        If no checkpoint file exists, returns
+        ("1900-01-01 00:00:00", None) which forces a full load.
+    """
+    _dbutils = _get_dbutils_for_s3()
+    if _dbutils is None:
+        print("WARNING: dbutils not available. Returning default timestamp.")
+        return "1900-01-01 00:00:00", None
+
+    file_path = _s3_timestamp_path(source_system_name)
+
+    try:
+        content = _dbutils.fs.head(file_path)
+        lines = content.strip().split("\n")
+
+        start_ts = "1900-01-01 00:00:00"
+        end_ts = None
+
+        for i, line in enumerate(lines):
+            if "START_TIMESTAMP" in line and i + 1 < len(lines):
+                start_ts = lines[i + 1].strip()
+            elif "END_TIMESTAMP" in line and i + 1 < len(lines):
+                end_ts = lines[i + 1].strip()
+
+        print(f"S3 timestamp checkpoint read: {file_path}")
+        print(f"  Start: {start_ts}")
+        print(f"  End:   {end_ts}")
+        return start_ts, end_ts
+    except Exception:
+        print(
+            f"No S3 timestamp checkpoint found for "
+            f"{source_system_name}. Using full load (1900)."
+        )
+        return "1900-01-01 00:00:00", None
+
+
+def determine_source_delta_ids(
+    spark_session,
+    source_dict,
+    start_timestamp,
+    end_timestamp,
+):
+    """
+    Identify records that have changed between two execution
+    timestamps.
+
+    Instead of processing the entire source table, only records whose
+    timestamp column falls between the previous and current execution
+    windows are selected for processing.
+
+    Args:
+        spark_session: The active SparkSession.
+        source_dict: A dictionary mapping table names to a
+            (primary_key_column, timestamp_column) tuple.
+            Example:
+                {
+                    "hmdm_dev.raw.hcp_api_data": ("iqvia_id", "load_date"),
+                    "hmdm_dev.raw.hco_api_data": ("iqvia_id", "load_date"),
+                }
+        start_timestamp: The previous execution's end timestamp.
+        end_timestamp: The current execution's end timestamp.
+
+    Returns:
+        list: Unique primary key values that changed in the window.
+        Returns an empty list if no changes are found.
+    """
+    if not source_dict:
+        print("WARNING: source_dict is empty. No delta IDs to determine.")
+        return []
+
+    all_delta_ids = []
+
+    for table_name, (pk_column, ts_column) in source_dict.items():
+        try:
+            query = f"""
+                SELECT DISTINCT {pk_column} AS delta_id
+                FROM {table_name}
+                WHERE {ts_column} > '{start_timestamp}'
+                  AND {ts_column} <= '{end_timestamp}'
+            """
+
+            rows = spark_session.sql(query).collect()
+            table_ids = [
+                row["delta_id"] for row in rows
+                if row["delta_id"] is not None
+            ]
+
+            print(f"  {table_name}: {len(table_ids)} changed records")
+            all_delta_ids.extend(table_ids)
+
+        except Exception as e:
+            print(f"  WARNING: Error querying {table_name}: {e}")
+
+    unique_delta_ids = list(set(all_delta_ids))
+
+    print(
+        f"Total delta IDs: {len(unique_delta_ids)} "
+        f"(from {len(source_dict)} tables)"
+    )
+    return unique_delta_ids

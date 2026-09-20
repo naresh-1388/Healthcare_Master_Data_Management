@@ -7,7 +7,7 @@
 # MAGIC ### Healthcare_Master_Data_Management - Stage 6 : MDM Egress (HCP Master + HCO Master)
 # MAGIC
 # MAGIC Exposes the mastered MDM.HCP / MDM.HCO records (and their child objects -
-# MAGIC Specialty, License, Alternate Name, Therapeutic Area for HCP; Name,
+# MAGIC Specialty, Identification, Alternate Name, Education for HCP; Name,
 # MAGIC Alternate Identifier, Phone, Specialty for HCO) to downstream consumers,
 # MAGIC following the `MDM_HUB_Egress-HCP_Master` and `MDM_HUB_Egress-HCO_Master`
 # MAGIC sheets.
@@ -59,8 +59,8 @@ HCP_EGRESS_GROUPS = [
     ("HMDM_DEV.MDM.HCP",                 "HMDM_DEV.MASTER.HCP"),
     ("HMDM_DEV.MDM.HCP_SPECIALTY",       "HMDM_DEV.MASTER.HCP_SPECIALTY"),
     ("HMDM_DEV.MDM.HCP_ALTERNATE_NAME",  "HMDM_DEV.MASTER.HCP_ALTERNATE_NAME"),
-    ("HMDM_DEV.MDM.HCP_THERAPEUTIC_AREA","HMDM_DEV.MASTER.HCP_THERAPEUTIC_AREA"),
-    ("HMDM_DEV.MDM.HCP_LICENSE",         "HMDM_DEV.MASTER.HCP_LICENSE"),
+    ("HMDM_DEV.MDM.HCP_EDUCATION",       "HMDM_DEV.MASTER.HCP_EDUCATION"),
+    ("HMDM_DEV.MDM.HCP_IDENTIFICATION", "HMDM_DEV.MASTER.HCP_IDENTIFICATION"),
 ]
 HCO_EGRESS_GROUPS = [
     ("HMDM_DEV.MDM.HCO",                       "HMDM_DEV.MASTER.HCO"),
@@ -164,7 +164,7 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # MAGIC **Processing flow:**
 # MAGIC 1. Reset latest batch `egress_status` to 'N' (latest batch only, not all)
 # MAGIC 2. Loop over each (source_table, target_table) egress group:
-# MAGIC    - HCP → 5 groups (HCP, HCP_SPECIALTY, HCP_ALTERNATE_NAME, HCP_THERAPEUTIC_AREA, HCP_LICENSE)
+# MAGIC    - HCP → 5 groups (HCP, HCP_SPECIALTY, HCP_ALTERNATE_NAME, HCP_EDUCATION, HCP_IDENTIFICATION)
 # MAGIC    - HCO → 5 groups (HCO, HCO_NAME, HCO_ALTERNATE_IDENTIFIER, HCO_PHONE, HCO_SPECIALTY)
 # MAGIC    - BOTH → 10 groups (all HCP + all HCO)
 # MAGIC 3. For each group, call `run_mdm_egress(spark, source_system_name, source_table, target_table, batch_id, write_mode)` which:

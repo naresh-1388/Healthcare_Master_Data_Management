@@ -1,0 +1,31 @@
+# Healthcare MDM - .gitignore
+
+# Environment / local storage
+hmdm_env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.eggs/
+*.egg
+*.egg-info/
+
+# Databricks / IDE
+.databricks/
+.idea/
+.vscode/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+tmp/
+temp/
+*.tmp

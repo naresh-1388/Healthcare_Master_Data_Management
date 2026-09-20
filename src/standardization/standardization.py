@@ -889,6 +889,37 @@ def write_standardization_table(
     output_df = stdn_df.withColumn("LOAD_DATE", F.current_timestamp())
     load_mode = "overwrite" if full_load_flag else "append"
 
+    # -------------------------------------------------------------
+    # Delete existing rows for pending batches (idempotency)
+    # -------------------------------------------------------------
+    # Before appending, remove any existing rows for the same
+    # batch_id values from the Landing table.  This prevents data
+    # multiplication when standardization is re-run for the same
+    # batch (e.g. after a failure and retry).
+    # -------------------------------------------------------------
+
+    if not full_load_flag and spark.catalog.tableExists(std_table):
+        df_columns = {c.lower() for c in stdn_df.columns}
+        if "batch_id" in df_columns:
+            batch_ids = [
+                row.batch_id
+                for row in stdn_df.select("batch_id").distinct().collect()
+            ]
+            batch_id_list = ", ".join(
+                str(int(b)) for b in batch_ids if b is not None
+            )
+            if batch_id_list:
+                spark.sql(
+                    f"DELETE FROM {std_table} "
+                    f"WHERE batch_id IN ({batch_id_list})"
+                )
+                logger.info(
+                    "Idempotency delete: removed existing rows "
+                    "for batches %s from %s",
+                    batch_id_list,
+                    std_table,
+                )
+
     if spark.catalog.tableExists(std_table) and not full_load_flag:
         target_schema = spark.table(std_table).schema
         source_columns = {c.upper(): c for c in output_df.columns}
