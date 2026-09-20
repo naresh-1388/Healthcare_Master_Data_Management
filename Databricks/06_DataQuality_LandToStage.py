@@ -15,22 +15,83 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Widgets
 # MAGIC %md #### 1. Widgets
+# MAGIC
+# MAGIC Select the source system and entity type from the widget panel at the top of the notebook before running DQ validation. The next cell creates these widgets and filters the source tables based on the entity type selection.
+# MAGIC
+# MAGIC * **Source System**: IQVIA_API (production pipeline)
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which landing tables are validated
+# MAGIC * **Source Identifier**: DQ config identifier for control-table rule lookup (default: IQVIA_HMDM)
+# MAGIC * **Batch ID**: Optional — blank means latest pending batch
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA_API", "Source system")
-dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source configuration identifier (for control-table rule lookup)")
-dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest pending batch per table)")
+# DBTITLE 1,Widget Setup
+# ============================================================
+# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# ============================================================
+# These widgets appear at the top of the notebook.
+# Select Source System and Entity Type before running DQ validation.
+# Entity Type controls which landing tables are validated:
+#   HCP  → only hcp_* tables
+#   HCO  → only hco_* tables
+#   BOTH → all tables with configured DQ rules
+# source_identifier and batch_id are DQ-specific config widgets.
+# ============================================================
 
+# Remove old widgets from previous notebook versions
+try:
+    dbutils.widgets.remove("source_identifiers")
+except Exception:
+    pass
+
+# Create dropdown widgets
+dbutils.widgets.dropdown("source_system_name", "IQVIA_API", ["IQVIA_API"], "Source System")
+dbutils.widgets.dropdown("entity_type", "BOTH", ["HCP", "HCO", "BOTH"], "Entity Type")
+
+# DQ-specific config widgets (kept as text — not entity type or source system)
+dbutils.widgets.text("source_identifier", "IQVIA_HMDM", "Source config identifier (for DQ rule lookup)")
+dbutils.widgets.text("batch_id", "", "Batch ID (blank = latest pending batch)")
+
+# Read widget values
 source_system_name = dbutils.widgets.get("source_system_name")
+SELECTED_ENTITY = dbutils.widgets.get("entity_type")
 source_identifier = dbutils.widgets.get("source_identifier")
 batch_id_param = dbutils.widgets.get("batch_id")
 batch_id = int(batch_id_param) if batch_id_param.strip() else None
 
+# All configured source identifiers (for display)
+ALL_IDENTIFIERS = [
+    'hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification',
+    'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education',
+    'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language',
+    'hcp_hco_affiliation',
+    'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification',
+    'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy',
+]
+
+# Filter identifiers by entity type
+if SELECTED_ENTITY == "HCP":
+    source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hcp_")]
+elif SELECTED_ENTITY == "HCO":
+    source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hco_")]
+else:
+    source_identifiers = ALL_IDENTIFIERS
+
+print(f"Source System : {source_system_name}")
+print(f"Entity Type   : {SELECTED_ENTITY}")
+print(f"Identifiers   : {len(source_identifiers)} entities")
+print(f"Batch ID      : {batch_id or 'latest'}")
+for sid in source_identifiers:
+    print(f"  - {sid}")
+
 # COMMAND ----------
 
+# DBTITLE 1,Imports
 # MAGIC %md #### 2. Imports
+# MAGIC
+# MAGIC Imports the DQ pipeline function and runtime configuration. The `main_data_quality_pipeline` function runs every configured DQ rule for one LANDING table and writes passing rows to STAGING and rejected rows to the DQ reject table. The notebook loops over all tables selected by the Entity Type widget.
 
 # COMMAND ----------
 
@@ -56,15 +117,9 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 
 # DBTITLE 1,Infrastructure Verification
 # MAGIC %md
-# MAGIC #### 2.5 Infrastructure Verification
+# MAGIC     #### 2.5 Infrastructure Verification
 # MAGIC
-# MAGIC **This section verifies required infrastructure exists:**
-# MAGIC - Source schema: `landing` (input from standardization)
-# MAGIC - Target schema: `staging` (output of DQ validation)
-# MAGIC - DQ control tables for rule configuration
-# MAGIC - DQ reject table for failed records
-# MAGIC
-# MAGIC **Safe to re-run:** All operations are idempotent.
+# MAGIC Verifies the `landing` schema (input) and `staging` schema (output) exist. All operations are idempotent.
 
 # COMMAND ----------
 
@@ -79,6 +134,13 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # COMMAND ----------
 
 # DBTITLE 1,Verify Staging Schema
+# MAGIC %md #### Verify Staging Schema
+# MAGIC
+# MAGIC Creates the `staging` schema if it does not exist, then lists all staging tables.
+
+# COMMAND ----------
+
+# DBTITLE 1,Verify Staging Schema
 # MAGIC %sql
 # MAGIC -- Create staging schema if not exists
 # MAGIC CREATE SCHEMA IF NOT EXISTS HMDM_DEV.staging
@@ -89,22 +151,44 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 
 # COMMAND ----------
 
-# MAGIC %md #### 3. Run every configured DQ rule, grouped by (source_table, target_table)
+# DBTITLE 1,Run DQ Validation
+# MAGIC %md #### 3. Run DQ validation
 # MAGIC
-# MAGIC `main_data_quality_pipeline(source_identifier, source_table, ...)` runs
-# MAGIC every rule configured for one LANDING table and writes the result to its
-# MAGIC STAGING table, so this cell drives it once per distinct source_table in
-# MAGIC DQ_RULES - covering the entire Land_to_Stag sheet in one notebook run.
+# MAGIC This cell executes the data quality pipeline for every table selected by the Entity Type widget.
+# MAGIC
+# MAGIC **Batch reset logic (important):** Only the **latest batch** for the selected source system is reset to `dq_status = 'N'` before processing. This uses `batch_id = (SELECT MAX(batch_id) ...)` to target just the newest batch — old batches that were already DQ-validated keep their 'Y' status and are **not** reprocessed. When a new batch arrives tomorrow, yesterday's batch stays untouched.
+# MAGIC
+# MAGIC **Processing flow:**
+# MAGIC 1. Reset latest batch `dq_status` to 'N' (latest batch only, not all)
+# MAGIC 2. Get all DQ rules from `get_rules()` and filter by Entity Type widget (HCP=13, HCO=9, BOTH=22)
+# MAGIC 3. For each table, call `main_data_quality_pipeline(source_identifier, source_table, ...)` which:
+# MAGIC    - Reads data from `landing.<entity>`
+# MAGIC    - Applies DQ rules (null_check, name_address_completeness, MDR checks)
+# MAGIC    - Writes passing rows to `staging.<entity>` (overwrite mode)
+# MAGIC    - Returns rejected rows for DQ reject table
+# MAGIC 4. After all tables processed, update latest batch `dq_status` to 'Y' (only if no failures)
+# MAGIC
+# MAGIC **Failure handling:** If a table fails, the loop continues with the remaining tables. Missing tables (upstream not run yet) are separated from actual errors in the result cell.
 
 # COMMAND ----------
 
+# DBTITLE 1,Run DQ Pipeline
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
+print(f"Source      : {source_system_name}")
+print(f"Entity Type : {SELECTED_ENTITY}")
+print(f"Entities    : {len(source_identifiers)} identifiers")
+print("=" * 60)
 
 # Get bare table names from DQ rules
 bare_source_tables = sorted({rule.source_table for rule in get_rules()})
-print(f"Source tables with configured DQ rules: {bare_source_tables}")
+# Filter by entity type
+if SELECTED_ENTITY == "HCP":
+    bare_source_tables = [t for t in bare_source_tables if t.startswith("hcp_")]
+elif SELECTED_ENTITY == "HCO":
+    bare_source_tables = [t for t in bare_source_tables if t.startswith("hco_")]
+print(f"Source tables with configured DQ rules ({SELECTED_ENTITY}): {bare_source_tables}")
 
 # Construct fully qualified table names for landing layer
 landing_schema = f"{catalog}.landing"
@@ -147,8 +231,13 @@ spark.sql(f"""
     UPDATE {catalog}.util.ctl_batch_log_tbl
     SET dq_status = 'N'
     WHERE source_system_name = '{source_system_name}'
+      AND batch_id = (
+          SELECT MAX(batch_id)
+          FROM {catalog}.util.ctl_batch_log_tbl
+          WHERE source_system_name = '{source_system_name}'
+      )
 """)
-print(f"DQ batch status reset to 'N' for {source_system_name}")
+print(f"DQ batch status reset to 'N' for latest batch ({source_system_name})")
 
 failures = []
 succeeded = 0
@@ -195,14 +284,35 @@ if not failures:
         UPDATE {catalog}.util.ctl_batch_log_tbl
         SET dq_status = 'Y'
         WHERE source_system_name = '{source_system_name}'
+          AND COALESCE(dq_status, 'N') = 'N'
+          AND batch_id = (
+              SELECT MAX(batch_id)
+              FROM {catalog}.util.ctl_batch_log_tbl
+              WHERE source_system_name = '{source_system_name}'
+          )
     """)
     print(f"\nDQ batch status updated to 'Y' for {source_system_name}")
+elif failures:
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
+        SET dq_status = 'N'
+        WHERE source_system_name = '{source_system_name}'
+          AND batch_id = (
+              SELECT MAX(batch_id)
+              FROM {catalog}.util.ctl_batch_log_tbl
+              WHERE source_system_name = '{source_system_name}'
+          )
+    """)
+    print(f"\nDQ batch status set to N (failures occurred)")
 
 print(f"\nSummary: {succeeded} succeeded, {len(failures)} failed")
 
 # COMMAND ----------
 
+# DBTITLE 1,Result
 # MAGIC %md #### 4. Result
+# MAGIC
+# MAGIC Checks if any tables failed during DQ validation. Missing tables (upstream pipeline not run yet) are separated from actual errors — missing tables produce a warning, actual errors raise a `RuntimeError`. If all succeeded, exits with `SUCCESS`.
 
 # COMMAND ----------
 

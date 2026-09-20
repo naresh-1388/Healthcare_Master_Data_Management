@@ -17,23 +17,72 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Widgets
 # MAGIC %md #### 1. Widgets
+# MAGIC
+# MAGIC Select the source system and entity type from the widget panel at the top of the notebook before running ingestion. The next cell creates these widgets and filters the source identifiers based on the entity type selection.
+# MAGIC
+# MAGIC * **Source System**: IQVIA_API (production pipeline)
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which source identifiers are processed
 
 # COMMAND ----------
 
-dbutils.widgets.text("source_system_name", "IQVIA", "Source system")
-dbutils.widgets.text(
-    "source_identifiers",
-    ",".join(['hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification', 'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education', 'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language', 'hcp_hco_affiliation', 'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification', 'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy']),
-    "Comma-separated source identifiers to ingest (blank = configured default set)",
-)
+# DBTITLE 1,Widget Setup
+# ============================================================
+# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# ============================================================
+# These widgets appear at the top of the notebook.
+# Select Source System and Entity Type before running ingestion.
+# Entity Type controls which source identifiers are processed:
+#   HCP  → only hcp_* identifiers
+#   HCO  → only hco_* identifiers
+#   BOTH → all identifiers
+# ============================================================
 
+# Remove old widgets from previous notebook versions
+try:
+    dbutils.widgets.remove("source_identifiers")
+except Exception:
+    pass
+
+# Create dropdown widgets
+dbutils.widgets.dropdown("source_system_name", "IQVIA_API", ["IQVIA_API"], "Source System")
+dbutils.widgets.dropdown("entity_type", "BOTH", ["HCP", "HCO", "BOTH"], "Entity Type")
+
+# Read widget values
 source_system_name = dbutils.widgets.get("source_system_name")
-source_identifiers = [s.strip() for s in dbutils.widgets.get("source_identifiers").split(",") if s.strip()]
+SELECTED_ENTITY = dbutils.widgets.get("entity_type")
+
+# All configured source identifiers (full set)
+ALL_IDENTIFIERS = [
+    'hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification',
+    'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education',
+    'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language',
+    'hcp_hco_affiliation',
+    'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification',
+    'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy',
+]
+
+# Filter identifiers by entity type
+if SELECTED_ENTITY == "HCP":
+    source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hcp_")]
+elif SELECTED_ENTITY == "HCO":
+    source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hco_")]
+else:
+    source_identifiers = ALL_IDENTIFIERS
+
+print(f"Source System : {source_system_name}")
+print(f"Entity Type   : {SELECTED_ENTITY}")
+print(f"Identifiers   : {len(source_identifiers)} entities")
+for sid in source_identifiers:
+    print(f"  - {sid}")
 
 # COMMAND ----------
 
+# DBTITLE 1,Imports
 # MAGIC %md #### 2. Imports
+# MAGIC
+# MAGIC Imports the ingestion pipeline function and runtime configuration. The `run_ingestion_pipeline` function processes one source identifier at a time — the notebook loops over all selected identifiers based on the Entity Type widget.
 
 # COMMAND ----------
 
@@ -100,21 +149,25 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 
 # COMMAND ----------
 
+# DBTITLE 1,Run Ingestion
 # MAGIC %md #### 3. Run ingestion for every configured source identifier
 # MAGIC
 # MAGIC `run_ingestion_pipeline(spark, source_system_name, source_identifier)` is a
 # MAGIC **per-entity** entry point (one HCP/HCO table at a time), so this cell
-# MAGIC loops over every entity configured above. A failure on one entity is
+# MAGIC loops over every entity selected by the Entity Type widget above. A failure on one entity is
 # MAGIC logged and re-raised after the loop finishes the remaining entities, so
 # MAGIC one bad source file does not silently block every other table.
 
 # COMMAND ----------
 
+# DBTITLE 1,Run Ingestion Loop
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")
 print(f"Source      : {source_system_name}")
-print(f"Entities    : {source_identifiers}")
+print(f"Entity Type : {SELECTED_ENTITY}")
+print(f"Entities    : {len(source_identifiers)} identifiers")
+print("=" * 60)
 
 failures = []
 for source_identifier in source_identifiers:
@@ -133,7 +186,10 @@ for source_identifier in source_identifiers:
 
 # COMMAND ----------
 
+# DBTITLE 1,Result
 # MAGIC %md #### 4. Result
+# MAGIC
+# MAGIC Checks if any entities failed during ingestion. If all succeeded, exits with SUCCESS. If any failed, raises a RuntimeError listing the failed entities.
 
 # COMMAND ----------
 

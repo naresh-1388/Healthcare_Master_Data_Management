@@ -111,6 +111,19 @@ def _table_exists(spark: SparkSession, table_name: str) -> bool:
             return False
 
 
+def _is_bootstrap_mode() -> bool:
+    """
+    Check if bootstrap mode allows new table creation.
+
+    When True (default): saveAsTable auto-creates missing MDM/MASTER tables.
+    When False: raises RuntimeError if target table doesn't exist (safety guard).
+
+    Set HMDM_BOOTSTRAP_MODE=false to enable the safety check after initial setup.
+    """
+    import os
+    return os.environ.get("HMDM_BOOTSTRAP_MODE", "true").lower() != "false"
+
+
 def _require_columns(
     df: DataFrame,
     required_columns: List[str],
@@ -1039,11 +1052,12 @@ DEV_HCO_FIELD_MAPPING = {
 }
 
 HCO_SOURCE_TO_MDM = {
-    "hco_name": ["hco", "hco_name"], "hco_alternate_name": "hco_alternate_identifier",
+    "hco_name": ["hco", "hco_name"],
+    "hco_identification": "hco_alternate_identifier",
     "hco_phone": "hco_phone", "hco_specialty": "hco_specialty",
+    "hco_alternate_name": "hco_alternate_name",
     "hco_address": "hco_address", "hco_email": "hco_email",
-    "hco_identification": "hco_identification", "hco_hco_hierarchy": "hco_hco_hierarchy",
-    "hco_tax": "hco_tax",
+    "hco_hco_hierarchy": "hco_hco_hierarchy", "hco_tax": "hco_tax",
 }
 
 HCP_PAYLOAD_ATTRIBUTES = [
@@ -1104,13 +1118,6 @@ def prepare_hcp_ingress(
         logger.info(
             "Using DEV_HCP field mapping for target %s.",
             target_table,
-        )
-
-    if not field_mapping:
-        raise RuntimeError(
-            "HCP ingress field mapping is not supplied. "
-            "The project source does not contain an approved production "
-            "column-level HCP ingress mapping."
         )
 
     source_columns = {c.lower(): c for c in df.columns}
@@ -1317,8 +1324,13 @@ def write_prepared_ingress(
                 publish_schema,
             )
 
-        # saveAsTable auto-creates the MDM target table on first run.
-        # No pre-existence check needed — ingress is the initial producer.
+        # Safety check: reject unknown target tables unless in bootstrap mode.
+        if not _is_bootstrap_mode() and not _table_exists(spark, qualified_target):
+            raise RuntimeError(
+                f"Approved physical MDM target table does not exist: "
+                f"{qualified_target}. "
+                "Set HMDM_BOOTSTRAP_MODE=true to allow initial table creation."
+            )
 
         output_df = df
 
@@ -1386,10 +1398,10 @@ def process_hcp_ingress(
         source_table=source_table,
     )
 
-    if "individualEid" in df.columns:
+    if "iqvia_id" in df.columns:
         df = deduplicate_for_ingress(
             df=df,
-            business_key="individualEid",
+            business_key="iqvia_id",
         )
 
     prepared = prepare_hcp_ingress(
@@ -1421,6 +1433,12 @@ def process_hco_simple_ingress(
 
     df = read_source_table(spark=spark, source_table=source_table, batch_id=batch_id)
     df = validate_ingress_input(df=df, source_table=source_table)
+
+    if "iqvia_id" in df.columns:
+        df = deduplicate_for_ingress(
+            df=df,
+            business_key="iqvia_id",
+        )
 
     prepared = prepare_hco_simple_ingress(
         df=df, source_table=source_table, target_table=target_table, field_mapping=field_mapping,
@@ -1481,27 +1499,6 @@ def process_hco_ingress(
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
-
-
-def _mark_ingress_status(spark, source_system_name: str, batch_id: int) -> None:
-    """Mark the completed ingress batch as successful."""
-    try:
-        from src.core.runtime_config import batch_log_tbl
-    except Exception:
-        try:
-            from core.runtime_config import batch_log_tbl
-        except Exception:
-            batch_log_tbl = "HMDM_DEV.util.ctl_batch_log_tbl"
-
-    source_sql = str(source_system_name).replace("'", "''")
-    spark.sql(
-        f"""
-        UPDATE {batch_log_tbl}
-        SET ingress_status = 'Y'
-        WHERE source_system_name = '{source_sql}'
-          AND batch_id = {int(batch_id)}
-        """
-    )
 
 
 def process_ingress(

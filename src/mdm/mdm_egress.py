@@ -71,6 +71,19 @@ def _table_exists(spark: SparkSession, table_name: str) -> bool:
             return False
 
 
+def _is_bootstrap_mode() -> bool:
+    """
+    Check if bootstrap mode allows new table creation.
+
+    When True (default): saveAsTable auto-creates missing MASTER tables.
+    When False: raises RuntimeError if target table doesn't exist (safety guard).
+
+    Set HMDM_BOOTSTRAP_MODE=false to enable the safety check after initial setup.
+    """
+    import os
+    return os.environ.get("HMDM_BOOTSTRAP_MODE", "true").lower() != "false"
+
+
 def _qualify_table(table_name: str, default_schema: str) -> str:
     """
     Qualify a table name without changing an already-qualified name.
@@ -259,8 +272,13 @@ def write_egress(
         )
         return 0
 
-    # saveAsTable auto-creates the target table on first run.
-    # No pre-existence check needed — egress is the initial producer.
+    # Safety check: reject unknown target tables unless in bootstrap mode.
+    if not _is_bootstrap_mode() and not _table_exists(spark, target_table):
+        raise RuntimeError(
+            f"Approved physical egress target table does not exist: "
+            f"{target_table}. "
+            "Set HMDM_BOOTSTRAP_MODE=true to allow initial table creation."
+        )
 
     (
         df.write
