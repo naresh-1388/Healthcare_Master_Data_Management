@@ -227,12 +227,27 @@ def _sync_one_table(
     sf_database: str = "HMDM_DEV",
 ) -> Dict[str, int]:
     """
-    Sync a single Databricks table to Snowflake.
+    Sync a single Databricks table to Snowflake using TRUNCATE-AND-LOAD.
 
-    1. Read Databricks table as pandas DataFrame
-    2. Convert dict/map columns to JSON strings (Snowflake can't bind dict)
-    3. Use write_pandas with overwrite=True to replace the Snowflake table
-       with the exact schema from Databricks (fixes column name mismatch)
+    This is the standard production ETL pattern:
+      1. Read Databricks table as pandas DataFrame
+      2. Convert dict/map/struct/array columns to strings (Snowflake
+         cannot bind Python dict types via write_pandas)
+      3. DELETE all existing rows from the Snowflake table
+         (TRUNCATE is faster but cannot be rolled back; DELETE is safer)
+      4. INSERT the fresh data using write_pandas in append mode
+         (overwrite=False — we already cleared existing rows)
+
+    Why TRUNCATE-AND-LOAD instead of overwrite=True or append:
+      - overwrite=True drops the entire table and recreates it. This
+        loses Snowflake grants, row-access policies, tags, and column
+        comments. If the INSERT fails after the DROP, you have no table.
+      - append (overwrite=False without DELETE) causes duplicate rows
+        on every re-run.
+      - DELETE + INSERT is idempotent, preserves schema/grants, and
+        is safe if the INSERT fails (table still exists, just empty).
+
+    The table is auto-created on first run if it does not exist.
 
     Returns:
         Dict with keys: source_rows, deleted_rows, inserted_rows
@@ -289,35 +304,48 @@ def _sync_one_table(
     # Build fully qualified Snowflake table name
     sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
     cur = conn.cursor()
+    deleted_rows = 0
 
     try:
-        # Use write_pandas with overwrite=True to replace the table with
-        # the Databricks schema. This fixes the column name mismatch:
-        # Snowflake DDL has SOURCE_ID, X_hco_address, etc.
-        # Databricks has individualEid, firstName, etc.
-        # overwrite=True drops + recreates with Databricks column names.
+        # Step 1: DELETE existing rows from Snowflake table.
+        # This is the TRUNCATE-AND-LOAD pattern — clear old data first,
+        # then insert fresh data. If the table does not exist yet,
+        # auto_create_table=True in write_pandas will create it.
+        try:
+            cur.execute(f"DELETE FROM {sf_full}")
+            deleted_rows = cur.rowcount if cur.rowcount is not None else 0
+        except Exception as del_err:
+            # Table does not exist yet — write_pandas will auto-create it
+            if "does not exist" in str(del_err).lower() or "object does not exist" in str(del_err).lower():
+                pass  # Expected on first run
+            else:
+                raise
+
+        # Step 2: INSERT fresh data using write_pandas in append mode.
+        # overwrite=False because we already deleted existing rows.
+        # auto_create_table=True creates the table on first run.
         success, nchunks, nrows, _ = write_pandas(
             conn,
             pdf,
             sf_table,
             schema=sf_schema,
             database=sf_database,
-            overwrite=True,
+            overwrite=False,
             auto_create_table=True,
         )
 
         print(
             f"  {dbx_table} → {sf_full}: "
-            f"{row_count} rows (inserted={nrows})"
+            f"{row_count} rows (deleted={deleted_rows}, inserted={nrows})"
         )
         return {
             "source_rows": row_count,
-            "deleted_rows": row_count,
+            "deleted_rows": deleted_rows,
             "inserted_rows": nrows,
         }
 
     finally:
-        cur.close()
+        cur.close
 
 
 def sync_staging_to_snowflake(
@@ -341,7 +369,7 @@ def sync_staging_to_snowflake(
     """
     creds = get_snowflake_credentials()
     if creds is None:
-        print("❌ Cannot sync — Snowflake credentials not configured.")
+        print("ERROR: Cannot sync — Snowflake credentials not configured.")
         return {}
 
     conn = create_snowflake_connection(creds)
@@ -392,7 +420,7 @@ def sync_master_to_snowflake(
     """
     creds = get_snowflake_credentials()
     if creds is None:
-        print("❌ Cannot sync — Snowflake credentials not configured.")
+        print("ERROR: Cannot sync — Snowflake credentials not configured.")
         return {}
 
     conn = create_snowflake_connection(creds)
