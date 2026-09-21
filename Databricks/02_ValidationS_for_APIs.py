@@ -704,6 +704,19 @@ if 'src.api.api_to_raw_caller' in sys.modules:
 
 from src.api import api_to_raw_caller
 
+# Helper: safely check if a table exists AND is readable.
+# spark.catalog.tableExists() can throw DELTA_PATH_DOES_NOT_EXIST
+# when the UC table entry exists but the underlying S3 path is missing.
+def safe_table_check(table_name):
+    """Returns (exists: bool, row_count: int or None)."""
+    try:
+        if spark.catalog.tableExists(table_name):
+            cnt = spark.table(table_name).count()
+            return True, cnt
+        return False, None
+    except Exception:
+        return False, None
+
 print(f"Entity Type selected : {SELECTED_ENTITY}")
 print(f"Source System selected: {SELECTED_SOURCE}")
 print("=" * 60)
@@ -755,8 +768,11 @@ try:
 
         if SELECTED_ENTITY in ("HCO", "BOTH"):
             print("\nHCO RAW Data:")
-            hco_df = spark.table("HMDM_DEV.raw.hco_api_data").orderBy(F.col("create_date").desc()).limit(5)
-            display(hco_df)
+            try:
+                hco_df = spark.table("HMDM_DEV.raw.hco_api_data").orderBy(F.col("create_date").desc()).limit(5)
+                display(hco_df)
+            except Exception as hco_raw_err:
+                print(f"  HCO RAW table not accessible: {hco_raw_err}")
 
         print("TEST 8 — API to RAW pipeline: PASS")
         test_results.append(("Test 8 — API to RAW", "PASS"))
@@ -783,14 +799,14 @@ if SELECTED_ENTITY in ("HCO", "BOTH"):
     # Layer 1: RAW
     print("\nHCO RAW Layer:")
     raw_table = "HMDM_DEV.raw.hco_api_data"
-    if spark.catalog.tableExists(raw_table):
-        raw_count = spark.table(raw_table).count()
+    raw_exists, raw_count = safe_table_check(raw_table)
+    if raw_exists:
         print(f"  {raw_table}: {raw_count} rows")
         if raw_count == 0:
             failures.append(f"{raw_table} has 0 rows")
     else:
         print(f"  {raw_table}: MISSING")
-        failures.append(f"{raw_table} does not exist")
+        failures.append(f"{raw_table} does not exist or is not readable")
 
     # Layer 2: Staging
     print("\nHCO Staging Layer:")
@@ -802,8 +818,8 @@ if SELECTED_ENTITY in ("HCO", "BOTH"):
     staging_total = 0
     for tbl in hco_staging_tables:
         full_name = f"HMDM_DEV.staging.{tbl}"
-        if spark.catalog.tableExists(full_name):
-            cnt = spark.table(full_name).count()
+        exists, cnt = safe_table_check(full_name)
+        if exists:
             staging_total += cnt
             print(f"  staging.{tbl}: {cnt} rows")
             if cnt == 0:
@@ -823,8 +839,8 @@ if SELECTED_ENTITY in ("HCO", "BOTH"):
     mdm_total = 0
     for tbl in hco_mdm_tables:
         full_name = f"HMDM_DEV.mdm.{tbl}"
-        if spark.catalog.tableExists(full_name):
-            cnt = spark.table(full_name).count()
+        exists, cnt = safe_table_check(full_name)
+        if exists:
             mdm_total += cnt
             print(f"  mdm.{tbl}: {cnt} rows")
             if cnt == 0:
@@ -843,8 +859,8 @@ if SELECTED_ENTITY in ("HCO", "BOTH"):
     master_total = 0
     for tbl in hco_master_tables:
         full_name = f"HMDM_DEV.master.{tbl}"
-        if spark.catalog.tableExists(full_name):
-            cnt = spark.table(full_name).count()
+        exists, cnt = safe_table_check(full_name)
+        if exists:
             master_total += cnt
             print(f"  master.{tbl}: {cnt} rows")
             if cnt == 0:

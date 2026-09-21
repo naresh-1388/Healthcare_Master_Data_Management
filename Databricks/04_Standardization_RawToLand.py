@@ -156,6 +156,27 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # COMMAND ----------
 
 # DBTITLE 1,Run Standardization Pipeline
+# Re-read widget values (SQL cells between may clear Python namespace)
+source_system_name = dbutils.widgets.get("source_system_name")
+SELECTED_ENTITY = dbutils.widgets.get("entity_type")
+
+# Rebuild source_identifiers if not in scope
+if 'source_identifiers' not in dir():
+    ALL_IDENTIFIERS = [
+        'hcp_name', 'hcp_address', 'hcp_alternate_name', 'hcp_identification',
+        'hcp_specialty', 'hcp_phone', 'hcp_email', 'hcp_education',
+        'hcp_tendencies', 'hcp_origin_university', 'hcp_tax', 'hcp_language',
+        'hcp_hco_affiliation',
+        'hco_name', 'hco_address', 'hco_alternate_name', 'hco_identification',
+        'hco_specialty', 'hco_phone', 'hco_email', 'hco_tax', 'hco_hco_hierarchy',
+    ]
+    if SELECTED_ENTITY == "HCP":
+        source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hcp_")]
+    elif SELECTED_ENTITY == "HCO":
+        source_identifiers = [s for s in ALL_IDENTIFIERS if s.startswith("hco_")]
+    else:
+        source_identifiers = ALL_IDENTIFIERS
+
 print(f"Environment : {env}")
 print(f"Catalog     : {catalog}")
 print(f"Job run URL : {get_notebook_run_url()}")

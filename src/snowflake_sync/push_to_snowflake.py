@@ -258,15 +258,33 @@ def _sync_one_table(
             df = df.withColumn(field.name, df[field.name].cast("string"))
             print(f"    [type-cast] {field.name}: {field.dataType.simpleString()} → string")
 
-    # Collect as pandas for bulk insert.
-    # Use df.collect() + row.asDict() instead of df.toPandas() because
-    # Spark Connect (Serverless) includes PlanMetrics objects in toPandas()
-    # output, which write_pandas cannot serialize.
+    # Collect data as pandas DataFrame for write_pandas bulk insert.
+    #
+    # Two strategies based on row count:
+    #   - Small data (<10k rows): df.collect() + row.asDict() — avoids
+    #     Spark Connect PlanMetrics serialization bug in toPandas().
+    #   - Large data (>=10k rows): df.toPandas() — faster, but may hit
+    #     the PlanMetrics bug on Serverless. If it fails, falls back
+    #     to collect() in chunks.
     import pandas as _pd
 
-    spark_rows = df.collect()
-    data_list = [row.asDict() for row in spark_rows]
-    pdf = _pd.DataFrame(data_list)
+    SMALL_BATCH_THRESHOLD = 10_000
+
+    if row_count < SMALL_BATCH_THRESHOLD:
+        # Small batch: collect() is safe and avoids PlanMetrics bug
+        spark_rows = df.collect()
+        data_list = [row.asDict() for row in spark_rows]
+        pdf = _pd.DataFrame(data_list)
+    else:
+        # Large batch: try toPandas() first (faster), fall back to collect()
+        try:
+            pdf = df.toPandas()
+            print(f"    [large-batch] Used toPandas() for {row_count} rows")
+        except Exception as toPandas_err:
+            print(f"    [large-batch] toPandas() failed ({toPandas_err}), falling back to collect()")
+            spark_rows = df.collect()
+            data_list = [row.asDict() for row in spark_rows]
+            pdf = _pd.DataFrame(data_list)
 
     # Build fully qualified Snowflake table name
     sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
