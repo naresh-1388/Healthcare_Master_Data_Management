@@ -249,11 +249,24 @@ def _sync_one_table(
         print(f"  {dbx_table} → {sf_schema}.{sf_table}: 0 rows (skip)")
         return {"source_rows": 0, "deleted_rows": 0, "inserted_rows": 0}
 
-    # Collect as pandas for bulk insert
-    pdf = df.toPandas()
+    # Cast complex types (map, struct, array) to string for safe pandas
+    # conversion on Serverless (Spark Connect). Simple types stay as-is.
+    from pyspark.sql.types import MapType, StructType, ArrayType
 
-    # Convert dict/map columns to JSON strings (Snowflake can't bind dict type)
-    pdf = _convert_dict_columns_to_json(pdf)
+    for field in df.schema.fields:
+        if isinstance(field.dataType, (MapType, StructType, ArrayType)):
+            df = df.withColumn(field.name, df[field.name].cast("string"))
+            print(f"    [type-cast] {field.name}: {field.dataType.simpleString()} → string")
+
+    # Collect as pandas for bulk insert.
+    # Use df.collect() + row.asDict() instead of df.toPandas() because
+    # Spark Connect (Serverless) includes PlanMetrics objects in toPandas()
+    # output, which write_pandas cannot serialize.
+    import pandas as _pd
+
+    spark_rows = df.collect()
+    data_list = [row.asDict() for row in spark_rows]
+    pdf = _pd.DataFrame(data_list)
 
     # Build fully qualified Snowflake table name
     sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
