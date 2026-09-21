@@ -22,6 +22,7 @@
 # MAGIC 4. `06_DataQuality_LandToStage`   (Landing -> Staging, with DQ rules)
 # MAGIC 5. `07_MDM_Ingress` (BOTH)        (Staging -> MDM.HCP and MDM.HCO)
 # MAGIC 6. `08_MDM_Egress` (BOTH)         (MDM -> Master/downstream)
+# MAGIC 7. `10_Snowflake_Sync`            (Databricks -> Snowflake bridge)
 
 # COMMAND ----------
 
@@ -69,16 +70,16 @@ print(f"Stage Timeout : {timeout} seconds")
 # /Users/<personal-email>/... path, which only worked in that one
 # person's workspace - avoid re-introducing that.)
 
-print("STAGE 1/6: Source -> Raw ingestion")
+print("STAGE 1/7: Source -> Raw ingestion")
 dbutils.notebook.run("03_Ingestion_SrcToRaw", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
-print("STAGE 2/6: Raw -> Landing standardization")
+print("STAGE 2/7: Raw -> Landing standardization")
 dbutils.notebook.run("04_Standardization_RawToLand", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
-print("STAGE 3/6: Canonical standardization")
+print("STAGE 3/7: Canonical standardization")
 dbutils.notebook.run("05_Canonical_Standardization", timeout, {"source_system_name": source_system_name, "source_identifiers": ""})
 
-print("STAGE 4/6: Landing -> Staging data quality")
+print("STAGE 4/7: Landing -> Staging data quality")
 dbutils.notebook.run(
     "06_DataQuality_LandToStage",
     timeout,
@@ -87,14 +88,14 @@ dbutils.notebook.run(
     {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "batch_id": batch_id},
 )
 
-print("STAGE 5/6: MDM Ingress (HCP + HCO)")
+print("STAGE 5/7: MDM Ingress (HCP + HCO)")
 dbutils.notebook.run(
     "07_MDM_Ingress", timeout,
     # NOTE: 07 reads "source_identifier" (singular), not "source_identifiers".
     {"source_system_name": source_system_name, "source_identifier": "IQVIA_HMDM", "entity_type": "BOTH"},
 )
 
-print("STAGE 6/6: MDM Egress (HCP Master + HCO Master)")
+print("STAGE 6/7: MDM Egress (HCP Master + HCO Master)")
 dbutils.notebook.run(
     "08_MDM_Egress", timeout,
     # NOTE: 08 has no "source_identifier(s)" widget at all - it reads
@@ -102,12 +103,15 @@ dbutils.notebook.run(
     {"source_system_name": source_system_name, "batch_id": batch_id, "entity_type": "BOTH"},
 )
 
+print("STAGE 7/7: Snowflake Sync (Databricks -> Snowflake)")
+dbutils.notebook.run("10_Snowflake_Sync", timeout, {})
+
 # COMMAND ----------
 
 # DBTITLE 1,Result
 # MAGIC %md #### 3. Result
 # MAGIC
-# MAGIC If all 6 stages completed without error, exits with `SUCCESS`. Any stage failure raises an exception and stops the pipeline.
+# MAGIC If all 7 stages completed without error, exits with `SUCCESS`. Any stage failure raises an exception and stops the pipeline.
 
 # COMMAND ----------
 

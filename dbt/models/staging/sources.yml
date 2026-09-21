@@ -3,10 +3,10 @@ version: 2
 sources:
   - name: staging
     description: >
-      STAGING-layer Delta tables (mirrored into Snowflake), written by the
-      Databricks Land_to_Stage job (src/dq/data_quality.py) after DQ rules
-      have been applied. See the Land_to_Stag sheet of the HMDM_DEV mapping
-      workbook for the full rule-to-table mapping.
+      STAGING-layer tables synced from Databricks HMDM_DEV.staging.* to Snowflake
+      by src/snowflake_sync/push_to_snowflake.py (Stage 7, notebook 10_Snowflake_Sync).
+      Column names match Databricks Delta tables exactly. The sync runs after
+      DQ rules have been applied (Stage 4, notebook 06_DataQuality_LandToStage).
     database: HMDM_DEV
     schema: STAGING
     tables:

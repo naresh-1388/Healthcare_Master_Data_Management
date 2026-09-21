@@ -1,0 +1,1 @@
+# Snowflake sync package — bridges Databricks Delta tables to Snowflake
