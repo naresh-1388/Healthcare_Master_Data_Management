@@ -30,4 +30,4 @@ select
     "Source_Created_Date" as "HCO_X_source_createdate",
     "Source_Updated_Date" as "HCO_X_source_updatedate",
     "Third_Party_ID" as "HCO_X_third_party_id"
-from {{ ref('stg_hco_name') }}
+from {{ ref('stg_HCO_NAME') }}

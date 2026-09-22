@@ -7,7 +7,7 @@
 -- base object.
 
 with base as (
-    select * from {{ ref('stg_hco_address') }}
+    select * from {{ ref('stg_HCO_ADDRESS') }}
 )
 
 select
@@ -22,11 +22,11 @@ select
     hco_hierarchy."Relationship_Type" as "X_hierarchy_relationship_type",
     hco_tax."Tax_Number" as "X_infac360ls_tax_number"
 from base
-left join {{ ref('stg_hco_alternate_name') }} as hco_alternate_name
+left join {{ ref('stg_HCO_ALTERNATE_NAME') }} as hco_alternate_name
     on base."Source_FK" = hco_alternate_name."Source_FK"
-left join {{ ref('stg_hco_email') }} as hco_email
+left join {{ ref('stg_HCO_EMAIL') }} as hco_email
     on base."Source_FK" = hco_email."Source_FK"
-left join {{ ref('stg_hco_hierarchy') }} as hco_hierarchy
+left join {{ ref('stg_HCO_HIERARCHY') }} as hco_hierarchy
     on base."Source_FK" = hco_hierarchy."Source_FK"
-left join {{ ref('stg_hco_tax') }} as hco_tax
+left join {{ ref('stg_HCO_TAX') }} as hco_tax
     on base."Source_FK" = hco_tax."Source_FK"

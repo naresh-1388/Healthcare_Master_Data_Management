@@ -13,4 +13,4 @@ select
     "Expiration_Date" as "X_expiration_date",
     "Source_Name" as "sourceSystem",
     "Source_FK" as "AlternateIdentifier_parentId"
-from {{ ref('stg_hco_identification') }}
+from {{ ref('stg_HCO_IDENTIFICATION') }}

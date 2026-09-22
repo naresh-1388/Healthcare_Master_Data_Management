@@ -13,4 +13,4 @@ select
     "Global_Specialty" as "X_global_specialty",
     "Group_Specialty" as "X_group_specialty",
     "Source_Name" as "sourceSystem"
-from {{ ref('stg_hco_specialty') }}
+from {{ ref('stg_HCO_SPECIALTY') }}

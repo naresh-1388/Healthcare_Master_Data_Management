@@ -7,7 +7,7 @@
 -- base object.
 
 with base as (
-    select * from {{ ref('stg_hcp_name') }}
+    select * from {{ ref('stg_HCP_NAME') }}
 )
 
 select
@@ -38,29 +38,29 @@ select
     hcp_tendencies."Code" as "X_infac360ls_tendency_code",
     hcp_tendencies."Rank" as "X_infac360ls_tendency_rank"
 from base
-left join {{ ref('stg_hcp_address') }} as hcp_address
+left join {{ ref('stg_HCP_ADDRESS') }} as hcp_address
     on base."Source_FK" = hcp_address."Source_FK"
-left join {{ ref('stg_hcp_alternate_name') }} as hcp_alternate_name
+left join {{ ref('stg_HCP_ALTERNATE_NAME') }} as hcp_alternate_name
     on base."Source_FK" = hcp_alternate_name."Source_FK"
-left join {{ ref('stg_hcp_education') }} as hcp_education
+left join {{ ref('stg_HCP_EDUCATION') }} as hcp_education
     on base."Source_FK" = hcp_education."Source_FK"
-left join {{ ref('stg_hcp_email') }} as hcp_email
+left join {{ ref('stg_HCP_EMAIL') }} as hcp_email
     on base."Source_FK" = hcp_email."Source_FK"
-left join {{ ref('stg_hcp_hco_affiliation') }} as hcp_hco_affiliation
+left join {{ ref('stg_HCP_HCO_AFFILIATION') }} as hcp_hco_affiliation
     on base."Source_FK" = hcp_hco_affiliation."Source_FK"
-left join {{ ref('stg_hcp_identification') }} as hcp_identification
+left join {{ ref('stg_HCP_IDENTIFICATION') }} as hcp_identification
     on base."Source_FK" = hcp_identification."Source_FK"
-left join {{ ref('stg_hcp_language') }} as hcp_language
+left join {{ ref('stg_HCP_LANGUAGE') }} as hcp_language
     on base."Source_FK" = hcp_language."Source_FK"
-left join {{ ref('stg_hcp_license') }} as hcp_license
+left join {{ ref('stg_HCP_LICENSE') }} as hcp_license
     on base."Source_FK" = hcp_license."Source_FK"
-left join {{ ref('stg_hcp_origin_university') }} as hcp_origin_university
+left join {{ ref('stg_HCP_ORIGIN_UNIVERSITY') }} as hcp_origin_university
     on base."Source_FK" = hcp_origin_university."Source_FK"
-left join {{ ref('stg_hcp_phone') }} as hcp_phone
+left join {{ ref('stg_HCP_PHONE') }} as hcp_phone
     on base."Source_FK" = hcp_phone."Source_FK"
-left join {{ ref('stg_hcp_specialty') }} as hcp_specialty
+left join {{ ref('stg_HCP_SPECIALTY') }} as hcp_specialty
     on base."Source_FK" = hcp_specialty."Source_FK"
-left join {{ ref('stg_hcp_tax') }} as hcp_tax
+left join {{ ref('stg_HCP_TAX') }} as hcp_tax
     on base."Source_FK" = hcp_tax."Source_FK"
-left join {{ ref('stg_hcp_tendencies') }} as hcp_tendencies
+left join {{ ref('stg_HCP_TENDENCIES') }} as hcp_tendencies
     on base."Source_FK" = hcp_tendencies."Source_FK"

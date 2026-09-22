@@ -16,4 +16,4 @@ select
     "Effective_End_Date" as "X_effective_end_date",
     "Source_Name" as "sourceSystem",
     "Source_FK" as "X_phone_parentId"
-from {{ ref('stg_hco_phone') }}
+from {{ ref('stg_HCO_PHONE') }}
