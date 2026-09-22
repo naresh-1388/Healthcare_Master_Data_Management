@@ -285,30 +285,43 @@ else:
 # This adds a new column 'snowflake_sync_status' to track sync state.
 
 if creds and results:
-    try:
-        # Add snowflake_sync_status column if it doesn't exist.
-        # Databricks does not support 'ADD COLUMN IF NOT EXISTS',
-        # so we check the schema first.
-        existing_cols = spark.sql("DESCRIBE TABLE HMDM_DEV.util.ctl_batch_log_tbl").collect()
-        col_names = [row.col_name for row in existing_cols]
-        
-        if 'snowflake_sync_status' not in col_names:
+    # Check if any tables had errors before marking sync as complete.
+    # Only set snowflake_sync_status = 'Y' if all tables synced successfully.
+    has_errors = False
+    for layer, tables in results.items():
+        for table, result in tables.items():
+            if "error" in result:
+                has_errors = True
+                break
+    
+    if has_errors:
+        print("WARNING: Some tables failed to sync — snowflake_sync_status NOT set to 'Y'")
+        print("    Re-run after fixing the errors above.")
+    else:
+        try:
+            # Add snowflake_sync_status column if it doesn't exist.
+            # Databricks does not support 'ADD COLUMN IF NOT EXISTS',
+            # so we check the schema first.
+            existing_cols = spark.sql("DESCRIBE TABLE HMDM_DEV.util.ctl_batch_log_tbl").collect()
+            col_names = [row.col_name for row in existing_cols]
+            
+            if 'snowflake_sync_status' not in col_names:
+                spark.sql("""
+                    ALTER TABLE HMDM_DEV.util.ctl_batch_log_tbl
+                    ADD COLUMNS (snowflake_sync_status STRING)
+                """)
+                print("Added snowflake_sync_status column")
+            
+            # Update latest batch
             spark.sql("""
-                ALTER TABLE HMDM_DEV.util.ctl_batch_log_tbl
-                ADD COLUMNS (snowflake_sync_status STRING)
+                UPDATE HMDM_DEV.util.ctl_batch_log_tbl
+                SET snowflake_sync_status = 'Y'
+                WHERE egress_status = 'Y'
+                  AND coalesce(snowflake_sync_status, 'N') != 'Y'
             """)
-            print("Added snowflake_sync_status column")
-        
-        # Update latest batch
-        spark.sql("""
-            UPDATE HMDM_DEV.util.ctl_batch_log_tbl
-            SET snowflake_sync_status = 'Y'
-            WHERE egress_status = 'Y'
-              AND coalesce(snowflake_sync_status, 'N') != 'Y'
-        """)
-        print("Batch log updated: snowflake_sync_status = 'Y'")
-    except Exception as e:
-        print(f"WARNING: Could not update batch log: {e}")
+            print("Batch log updated: snowflake_sync_status = 'Y'")
+        except Exception as e:
+            print(f"WARNING: Could not update batch log: {e}")
 else:
     print("Batch log update skipped")
 

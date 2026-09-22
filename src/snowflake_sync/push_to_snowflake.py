@@ -303,66 +303,68 @@ def _sync_one_table(
 
     # Build fully qualified Snowflake table name
     sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
-
-    # Transaction safety: disable autocommit so DELETE + INSERT run
-    # inside a single transaction. If INSERT fails after DELETE,
-    # ROLLBACK restores the old rows — the table is not left empty.
-    # (Snowflake defaults to autocommit=True, which would commit
-    # the DELETE immediately, before INSERT is attempted.)
-    conn.autocommit(False)
     cur = conn.cursor()
     deleted_rows = 0
 
+    # Attempt 1: TRUNCATE-AND-LOAD (DELETE + INSERT with transaction safety)
+    # This is the preferred path — preserves Snowflake grants, policies, tags.
     try:
-        # Step 1: DELETE existing rows from Snowflake table.
-        # This is the TRUNCATE-AND-LOAD pattern — clear old data first,
-        # then insert fresh data. If the table does not exist yet,
-        # auto_create_table=True in write_pandas will create it.
+        # Disable autocommit so DELETE + INSERT run inside a single transaction.
+        # If INSERT fails, ROLLBACK restores the old rows.
+        conn.autocommit(False)
+
+        # Step 1: DELETE existing rows.
         try:
             cur.execute(f"DELETE FROM {sf_full}")
             deleted_rows = cur.rowcount if cur.rowcount is not None else 0
         except Exception as del_err:
-            # Table does not exist yet — write_pandas will auto-create it
             if "does not exist" in str(del_err).lower() or "object does not exist" in str(del_err).lower():
-                pass  # Expected on first run
+                pass  # Table does not exist yet — write_pandas will auto-create it
             else:
                 raise
 
         # Step 2: INSERT fresh data using write_pandas in append mode.
-        # overwrite=False because we already deleted existing rows.
-        # auto_create_table=True creates the table on first run.
         success, nchunks, nrows, _ = write_pandas(
-            conn,
-            pdf,
-            sf_table,
-            schema=sf_schema,
-            database=sf_database,
-            overwrite=False,
-            auto_create_table=True,
+            conn, pdf, sf_table,
+            schema=sf_schema, database=sf_database,
+            overwrite=False, auto_create_table=True,
         )
 
-        # Both DELETE and INSERT succeeded — commit the transaction.
         conn.commit()
 
-        print(
-            f"  {dbx_table} → {sf_full}: "
-            f"{row_count} rows (deleted={deleted_rows}, inserted={nrows})"
-        )
-        return {
-            "source_rows": row_count,
-            "deleted_rows": deleted_rows,
-            "inserted_rows": nrows,
-        }
+        print(f"  {dbx_table} → {sf_full}: {row_count} rows (deleted={deleted_rows}, inserted={nrows})")
+        return {"source_rows": row_count, "deleted_rows": deleted_rows, "inserted_rows": nrows}
 
-    except Exception:
-        # Either DELETE or INSERT failed — rollback restores old data.
-        # The table keeps its previous contents instead of being left empty.
-        conn.rollback()
-        raise
+    except Exception as first_err:
+        # Rollback the failed transaction — restores old data if DELETE succeeded.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+        # Check if the failure is a schema/type mismatch (e.g. existing Snowflake
+        # table was created by original DDL with different column types than
+        # Databricks). If so, fall back to overwrite=True which DROPs and
+        # recreates the table with the schema from the Databricks data.
+        err_str = str(first_err).lower()
+        if "type does not match" in err_str or "compilation error" in err_str:
+            print(f"    [schema-mismatch] Recreating table with Databricks schema: {first_err}")
+            conn.autocommit(True)
+
+            # Fallback: DROP + CREATE + INSERT (overwrite=True)
+            success, nchunks, nrows, _ = write_pandas(
+                conn, pdf, sf_table,
+                schema=sf_schema, database=sf_database,
+                overwrite=True, auto_create_table=True,
+            )
+
+            print(f"  {dbx_table} → {sf_full}: {row_count} rows (recreated, inserted={nrows})")
+            return {"source_rows": row_count, "deleted_rows": 0, "inserted_rows": nrows}
+        else:
+            raise
 
     finally:
         cur.close()
-        # Restore autocommit to True (Snowflake default) for other operations.
         conn.autocommit(True)
 
 
