@@ -6,4 +6,4 @@
 select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "Language"
-from { source('staging', 'HCP_LANGUAGE') }
+from {{ source('staging', 'HCP_LANGUAGE') }}

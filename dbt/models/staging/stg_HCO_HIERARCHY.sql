@@ -7,4 +7,4 @@ select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "Parent_Organization_EID",
     CAST(NULL AS VARCHAR) as "Relationship_Type"
-from { source('staging', 'HCO_HIERARCHY') }
+from {{ source('staging', 'HCO_HIERARCHY') }}

@@ -1,4 +1,4 @@
--- Thin passthrough view over { source('staging', 'HCP_LICENSE') }.
+-- Thin passthrough view over {{ source('staging', 'HCP_LICENSE') }}.
 -- Synced from Databricks by push_to_snowflake.py — all columns pass through.
 
 -- HCP_LICENSE is not synced from Databricks (no staging table with data).
@@ -7,4 +7,4 @@
 select
     CAST(NULL AS VARCHAR) as "Source_FK",
     "X_infac360ls_License"
-from { source('staging', 'HCP_LICENSE') }
+from {{ source('staging', 'HCP_LICENSE') }}

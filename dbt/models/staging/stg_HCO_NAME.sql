@@ -10,7 +10,7 @@ with parsed as (
         "organization_type" as "HCO_Subtype",
         "country_code" as "Country",
         PARSE_JSON("response_json") as j
-    from { source('staging', 'HCO_NAME') }
+    from {{ source('staging', 'HCO_NAME') }}
 )
 select
     "Source_FK",

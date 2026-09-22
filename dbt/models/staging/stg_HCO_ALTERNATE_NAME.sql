@@ -7,4 +7,4 @@ select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "Alternate_Name",
     CAST(NULL AS VARCHAR) as "Alternate_Name_Type"
-from { source('staging', 'HCO_ALTERNATE_NAME') }
+from {{ source('staging', 'HCO_ALTERNATE_NAME') }}

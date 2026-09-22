@@ -7,4 +7,4 @@ select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "University_Name",
     CAST(NULL AS VARCHAR) as "University_Code"
-from { source('staging', 'HCP_ORIGIN_UNIVERSITY') }
+from {{ source('staging', 'HCP_ORIGIN_UNIVERSITY') }}

@@ -13,4 +13,4 @@ select
     CAST(NULL AS VARCHAR) as "Specialty_Source",
     CAST(NULL AS VARCHAR) as "Global_Specialty",
     CAST(NULL AS VARCHAR) as "Group_Specialty"
-from { source('staging', 'HCO_SPECIALTY') }
+from {{ source('staging', 'HCO_SPECIALTY') }}

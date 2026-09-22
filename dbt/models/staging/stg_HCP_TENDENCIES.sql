@@ -7,4 +7,4 @@ select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "Code",
     CAST(NULL AS VARCHAR) as "Rank"
-from { source('staging', 'HCP_TENDENCIES') }
+from {{ source('staging', 'HCP_TENDENCIES') }}

@@ -6,4 +6,4 @@
 select
     "iqvia_id" as "Source_FK",
     CAST(NULL AS VARCHAR) as "Email"
-from { source('staging', 'HCO_EMAIL') }
+from {{ source('staging', 'HCO_EMAIL') }}

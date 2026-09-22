@@ -7,7 +7,7 @@ with parsed as (
         "iqvia_id" as "Source_FK",
         "source_name" as "Source_Name",
         PARSE_JSON("response_json") as j
-    from { source('staging', 'HCO_IDENTIFICATION') }
+    from {{ source('staging', 'HCO_IDENTIFICATION') }}
 )
 select
     "Source_FK",
