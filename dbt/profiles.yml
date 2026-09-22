@@ -1,0 +1,13 @@
+healthcare_mdm:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: AXIVKAP-PF58156
+      user: HUBM
+      password: "@Devansh#4552!"
+      role: ACCOUNTADMIN
+      database: HMDM_DEV
+      warehouse: HMDM_WH
+      schema: STAGING
+      threads: 4
