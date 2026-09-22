@@ -303,6 +303,13 @@ def _sync_one_table(
 
     # Build fully qualified Snowflake table name
     sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
+
+    # Transaction safety: disable autocommit so DELETE + INSERT run
+    # inside a single transaction. If INSERT fails after DELETE,
+    # ROLLBACK restores the old rows — the table is not left empty.
+    # (Snowflake defaults to autocommit=True, which would commit
+    # the DELETE immediately, before INSERT is attempted.)
+    conn.autocommit(False)
     cur = conn.cursor()
     deleted_rows = 0
 
@@ -334,6 +341,9 @@ def _sync_one_table(
             auto_create_table=True,
         )
 
+        # Both DELETE and INSERT succeeded — commit the transaction.
+        conn.commit()
+
         print(
             f"  {dbx_table} → {sf_full}: "
             f"{row_count} rows (deleted={deleted_rows}, inserted={nrows})"
@@ -344,8 +354,16 @@ def _sync_one_table(
             "inserted_rows": nrows,
         }
 
+    except Exception:
+        # Either DELETE or INSERT failed — rollback restores old data.
+        # The table keeps its previous contents instead of being left empty.
+        conn.rollback()
+        raise
+
     finally:
-        cur.close
+        cur.close()
+        # Restore autocommit to True (Snowflake default) for other operations.
+        conn.autocommit(True)
 
 
 def sync_staging_to_snowflake(
