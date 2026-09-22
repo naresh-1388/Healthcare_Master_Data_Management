@@ -71,7 +71,9 @@ def publish_snapshot(session: Session, entity: str) -> str:
     if entity not in ("HCP", "HCO"):
         raise ValueError(f"entity must be 'HCP' or 'HCO', got {entity!r}")
 
-    source_table = f"HMDM_DEV.MASTER.{entity}"
+    # dbt marts write to HMDM_DEV.MDM schema (see dbt_project.yml +schema: mdm).
+    # The model names are master_hcp / master_hco (lowercase).
+    source_table = f"HMDM_DEV.MDM.master_{entity.lower()}"
     snapshot_date = dt.date.today().strftime("%Y%m%d")
     snapshot_table = f"HMDM_DEV.MASTER.{entity}_SNAPSHOT_{snapshot_date}"
 

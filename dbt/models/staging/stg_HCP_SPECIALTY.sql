@@ -1,5 +1,15 @@
--- Thin passthrough view over { source('staging', 'HCP_SPECIALTY') }.
--- Synced from Databricks by push_to_snowflake.py — all columns pass through.
+-- Staging view for HCP_SPECIALTY.
+-- Maps Databricks staging columns to dbt-expected names.
+-- Source_FK = iqvia_id (join key for mdm_hcp.sql).
+-- X_infac360ls_Specialty extracted from response_json.
 
-select *
-from { source('staging', 'HCP_SPECIALTY') }
+with parsed as (
+    select
+        "iqvia_id" as "Source_FK",
+        PARSE_JSON("response_json") as j
+    from { source('staging', 'HCP_SPECIALTY') }
+)
+select
+    "Source_FK",
+    j['Specialty'][0]['Specialty Class']::VARCHAR as "X_infac360ls_Specialty"
+from parsed

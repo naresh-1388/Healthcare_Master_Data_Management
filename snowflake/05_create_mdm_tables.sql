@@ -125,3 +125,59 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCP (
     "X_infac360ls_tendency_rank" VARCHAR(4000)
 );
 
+-- ============================================================
+-- Informatica MDM hub child objects (mdm_hub source in sources.yml)
+-- These tables are NOT populated by the Databricks pipeline or dbt.
+-- They are created empty so dbt models that reference source('mdm_hub', ...)
+-- do not fail with 'table not found'. Populate via Informatica MDM hub export.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_specialty (
+    "X_infa360_SpecialtyType" VARCHAR(4000),
+    "X_infa360_SpecialtyClass" VARCHAR(4000),
+    "X_infa360_SpecialtyRank" VARCHAR(4000),
+    "X_infa360_taxonomyName" VARCHAR(4000),
+    "X_infa360_group" VARCHAR(4000),
+    "X_infa360_taxonomy_code" VARCHAR(4000),
+    "X_infa360_subClassification" VARCHAR(4000),
+    "X_specialty_status" VARCHAR(4000),
+    "O_Load_Date" TIMESTAMP_NTZ
+);
+
+CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_alternate_name (
+    "alternateNameType" VARCHAR(4000),
+    "AlternateName" VARCHAR(4000),
+    "X_alternate_name_status" VARCHAR(4000),
+    "effectiveStartDate" TIMESTAMP_NTZ,
+    "effectiveEndDate" TIMESTAMP_NTZ,
+    "O_Load_Date" TIMESTAMP_NTZ
+);
+
+CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_license (
+    "X_infa360_License_parentId" VARCHAR(4000),
+    "sourcePKey" VARCHAR(4000),
+    "X_infa360_LicenseType" VARCHAR(4000),
+    "X_infa360_LicenseNumber" VARCHAR(4000),
+    "X_country" VARCHAR(4000),
+    "X_state" VARCHAR(4000),
+    "X_sample_elig" VARCHAR(4000),
+    "X_sampleability_overall" VARCHAR(4000),
+    "X_sampleability_lastreceived_date" TIMESTAMP_NTZ,
+    "X_sampleability_fed_sanctions_date" TIMESTAMP_NTZ,
+    "X_sampleability_desigstatus" VARCHAR(4000),
+    "X_infa360_issueDate" TIMESTAMP_NTZ,
+    "X_infa360_expiryDate" TIMESTAMP_NTZ,
+    "X_degree" VARCHAR(4000),
+    "X_adjLic_expdate" TIMESTAMP_NTZ,
+    "X_AdjCode" VARCHAR(4000),
+    "X_AdjCodesDescriptions" VARCHAR(4000),
+    "X_infa360_status" VARCHAR(4000)
+);
+
+CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_therapeutic_area (
+    "X_infa360_TherapeuticArea_parentId" VARCHAR(4000),
+    "X_infa360_activeIndicator" VARCHAR(4000),
+    "X_infa360_therapeuticArea" VARCHAR(4000),
+    "O_Load_Date" TIMESTAMP_NTZ
+);
+

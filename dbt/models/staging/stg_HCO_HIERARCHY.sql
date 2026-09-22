@@ -1,5 +1,10 @@
--- Thin passthrough view over { source('staging', 'HCO_HIERARCHY') }.
--- Synced from Databricks by push_to_snowflake.py — all columns pass through.
+-- Staging view for HCO_HIERARCHY.
+-- Maps Databricks staging columns to dbt-expected names.
+-- Source_FK = iqvia_id (join key for mdm_hco.sql).
+-- Hierarchy fields not present in mock API data -- return NULL.
 
-select *
+select
+    "iqvia_id" as "Source_FK",
+    CAST(NULL AS VARCHAR) as "Parent_Organization_EID",
+    CAST(NULL AS VARCHAR) as "Relationship_Type"
 from { source('staging', 'HCO_HIERARCHY') }

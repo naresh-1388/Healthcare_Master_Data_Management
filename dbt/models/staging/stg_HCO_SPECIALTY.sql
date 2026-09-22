@@ -1,5 +1,16 @@
--- Thin passthrough view over { source('staging', 'HCO_SPECIALTY') }.
--- Synced from Databricks by push_to_snowflake.py — all columns pass through.
+-- Staging view for HCO_SPECIALTY.
+-- Maps Databricks staging columns to dbt-expected names.
+-- Specialty fields not present in mock HCO API data -- return NULL.
 
-select *
+select
+    "iqvia_id" as "Source_FK",
+    "source_name" as "Source_Name",
+    CAST(NULL AS VARCHAR) as "Specialty_PK",
+    CAST(NULL AS VARCHAR) as "Specialty_Rank",
+    CAST(NULL AS VARCHAR) as "Specialty",
+    CAST(NULL AS VARCHAR) as "Specialty_Type",
+    CAST(NULL AS VARCHAR) as "Status",
+    CAST(NULL AS VARCHAR) as "Specialty_Source",
+    CAST(NULL AS VARCHAR) as "Global_Specialty",
+    CAST(NULL AS VARCHAR) as "Group_Specialty"
 from { source('staging', 'HCO_SPECIALTY') }
