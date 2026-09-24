@@ -34,6 +34,9 @@ JOB_IDS = {
     "ingress_hco": "<DATABRICKS_JOB_ID_INGRESS_HCO>",
     "egress_hcp": "<DATABRICKS_JOB_ID_EGRESS_HCP>",
     "egress_hco": "<DATABRICKS_JOB_ID_EGRESS_HCO>",
+    "snowflake_sync": "<DATABRICKS_JOB_ID_SNOWFLAKE_SYNC>",
+    "dbt_run": "<DATABRICKS_JOB_ID_DBT_RUN>",
+    "snowpark_snapshot": "<DATABRICKS_JOB_ID_SNOWPARK_SNAPSHOT>",
 }
 
 default_args = {

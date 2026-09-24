@@ -144,8 +144,8 @@ print(f"Source path: {SRC_ROOT}")
 # MAGIC `healthcare-mdm/dev/api-snowflake` using the Databricks service
 # MAGIC credential `healthcare_mdm_secrets_credential`.
 # MAGIC
-# MAGIC If credentials are missing, the sync is skipped gracefully with
-# MAGIC a warning message. No error is raised — the notebook exits normally
+# MAGIC If credentials are missing, the pipeline FAILS with an error.
+# MAGIC a RuntimeError. The notebook does NOT exit normally
 # MAGIC so that the pipeline can continue without Snowflake sync if needed.
 
 # COMMAND ----------
@@ -155,16 +155,17 @@ print(f"Source path: {SRC_ROOT}")
 # CHECK SNOWFLAKE CREDENTIALS
 # ============================================================
 # Verify that Snowflake connection is configured before attempting sync.
-# If credentials are missing, the sync is skipped gracefully.
+# If credentials are missing, the pipeline FAILS with an error.
 
 creds = get_snowflake_credentials()
 
 if creds:
     print("Snowflake credentials found — proceeding with sync")
 else:
-    print("WARNING: Snowflake credentials NOT configured.")
+    print("ERROR: Snowflake credentials NOT configured.")
     print("    Check AWS Secrets Manager secret 'healthcare-mdm/dev/api-snowflake'")
     print("    and Databricks service credential 'healthcare_mdm_secrets_credential'.")
+    raise RuntimeError("Snowflake credentials not found. Pipeline cannot continue without Snowflake sync.")
 
 # COMMAND ----------
 
@@ -252,8 +253,8 @@ elif creds and sync_already_done:
     print("Sync skipped — latest batch already synced to Snowflake")
     results = {}
 else:
-    print("Sync skipped — no Snowflake credentials")
-    results = {}
+    print("ERROR: Snowflake sync skipped — no credentials. Pipeline FAILING.")
+    raise RuntimeError("Snowflake sync failed: no credentials. Pipeline cannot succeed without Snowflake sync.")
 
 # COMMAND ----------
 

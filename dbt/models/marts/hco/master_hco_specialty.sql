@@ -8,8 +8,8 @@
 
 select
     "sourcePKey" as "sourcePKey",
-    "X_infa360_rank" as "X_infa360_rank",
-    "X_infa360_Specialty" as "X_infa360_Specialty",
+    "X_informatica_rank" as "X_informatica_rank",
+    "X_informatica_Specialty" as "X_informatica_Specialty",
     "X_specialty_type" as "X_specialty_type",
     "X_specialty_status" as "X_specialty_status",
     "X_specialty_source" as "X_specialty_source",

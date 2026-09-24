@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.STAGING.HCP_HCO_AFFILIATION LIKE HMDM_DEV.ST
 
 -- HCP_LICENSE (kept from original DDL, not synced from Databricks)
 CREATE TABLE IF NOT EXISTS HMDM_DEV.STAGING.HCP_LICENSE (
-    "X_infac360ls_License" VARCHAR(4000)
+    "X_informatica_License" VARCHAR(4000)
 );
 
 -- HCO staging tables (9 tables, same 11-column schema)

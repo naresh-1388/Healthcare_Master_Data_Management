@@ -1,7 +1,7 @@
 -- Staging view for HCP_TAX.
 -- Maps Databricks staging columns to dbt-expected names.
 -- Source_FK = iqvia_id (join key for mdm_hcp.sql).
--- X_infac360ls_dea extracted from response_json (DEA section, may be NULL if empty).
+-- X_informatica_dea extracted from response_json (DEA section, may be NULL if empty).
 
 with parsed as (
     select
@@ -11,5 +11,5 @@ with parsed as (
 )
 select
     "Source_FK",
-    j['DEA'][0]['DEA Number']::VARCHAR as "X_infac360ls_dea"
+    j['DEA'][0]['DEA Number']::VARCHAR as "X_informatica_dea"
 from parsed

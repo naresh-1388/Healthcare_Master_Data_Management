@@ -1,4 +1,11 @@
 -- ============================================================
+-- NOTE: This audit runs in DATABRICKS (not Snowflake).
+-- It checks the RAW layer which is NOT synced to Snowflake.
+-- The Snowflake sync only covers STAGING and MASTER tables.
+-- For Snowflake-side validation, use snowflake/08_Snow_Validations.sql.
+-- ============================================================
+
+-- ============================================================
 -- Healthcare_Master_Data_Management - Cross-layer audit / reconciliation
 --
 -- Run these after a pipeline batch completes to confirm row counts are

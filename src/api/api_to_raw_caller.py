@@ -14,6 +14,13 @@ This module:
 NO HARDCODED CREDENTIALS OR URLS!
 All sensitive data comes from AWS Secrets Manager.
 """
+# ARCHITECTURE NOTE:
+#   This module writes API data to raw.hcp_api_data and raw.hco_api_data.
+#   The main 22-table pipeline reads from raw.hcp_name, raw.hcp_address, etc.
+#   A transformation step is needed to split raw.hcp_api_data into individual
+#   entity tables (raw.hcp_name, raw.hcp_address, raw.hcp_phone, ...).
+#   This module is NOT called by 09_Run_Full_Pipeline.py - it runs separately.
+#   TODO: Add entity-split transformation to connect API-to-RAW to the main pipeline.
 
 import json
 import time
@@ -175,28 +182,14 @@ def get_pending_entities(entity_types: List[str] = None, max_records: int = None
         table_exists = False
     
     if not table_exists:
-        logger.warning(f"Control table does not exist: {CONTROL_TABLE}")
-        logger.info("Creating control table with sample data...")
-        
-        # Create sample data for testing
-        sample_data = [
-            ("W12345678", "HCP", "ACTIVE", "NL", 1),
-            ("W87654321", "HCP", "ACTIVE", "BE", 1),
-            ("W11111111", "HCO", "ACTIVE", "NL", 1),
-            ("W22222222", "HCO", "ACTIVE", "BE", 2),
-        ]
-        
-        df_sample = spark.createDataFrame(
-            sample_data,
-            ["entity_id", "entity_type", "status", "country_code", "priority"]
+        logger.error(f"Control table does not exist: {CONTROL_TABLE}")
+        logger.error("FAIL FAST: Do NOT auto-create sample data in production.")
+        logger.error("Create the control table with real entity IDs before running the pipeline.")
+        raise RuntimeError(
+            f"Control table {CONTROL_TABLE} does not exist. "
+            "Create it with real entity IDs before running the API-to-RAW pipeline. "
+            "Auto-creating sample data is disabled to prevent fake records in production."
         )
-        
-        df_sample = df_sample.withColumn("create_date", F.current_timestamp()) \
-                             .withColumn("update_date", F.current_timestamp()) \
-                             .withColumn("last_processed_date", F.lit(None).cast("timestamp"))
-        
-        df_sample.write.format("delta").mode("overwrite").saveAsTable(CONTROL_TABLE)
-        logger.info(f"Created control table: {CONTROL_TABLE}")
     
     # Read pending entities
     query = f"""
@@ -206,7 +199,7 @@ def get_pending_entities(entity_types: List[str] = None, max_records: int = None
             country_code,
             priority
         FROM {CONTROL_TABLE}
-        WHERE status = 'ACTIVE'
+        WHERE status IN ('ACTIVE', 'PENDING')
     """
     
     if entity_types:
@@ -254,7 +247,8 @@ def make_lambda_call(
     
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-api-key": api_key
     }
     
     payload = {
@@ -498,6 +492,14 @@ def run_api_to_raw(
                 df.write.format("delta").mode("append").saveAsTable(target_table)
                 
                 logger.info(f"Successfully wrote {entity_id} to {target_table}")
+                
+                # Mark entity as PROCESSED to prevent reprocessing on next run
+                spark.sql(f"""
+                    UPDATE {CONTROL_TABLE}
+                    SET status = 'PROCESSED', last_processed_date = current_timestamp()
+                    WHERE entity_id = '{entity_id}'
+                """)
+                logger.info(f"Marked {entity_id} as PROCESSED in {CONTROL_TABLE}")
                 stats["total_success"] += 1
                 
             except Exception as e:

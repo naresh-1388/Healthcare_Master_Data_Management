@@ -202,6 +202,22 @@ spark.sql(f"""
 """)
 print(f"Egress batch status reset to 'N' for latest batch ({source_system_name})")
 
+# Resolve batch_id if not provided via widget.
+# This bypasses the module's get_latest_eligible_batch() which uses
+# spark.table() and may not reflect the UPDATE above on Spark Connect.
+if batch_id is None:
+    _bid_row = spark.sql(f"""
+        SELECT MAX(CAST(batch_id AS INT)) AS max_bid
+        FROM {catalog}.util.ctl_batch_log_tbl
+        WHERE source_system_name = '{source_system_name}'
+          AND ingress_status = 'Y'
+    """).collect()
+    if _bid_row and _bid_row[0]['max_bid'] is not None:
+        batch_id = int(_bid_row[0]['max_bid'])
+        print(f"Resolved batch_id = {batch_id} (latest with ingress_status=Y)")
+    else:
+        print("WARNING: No batch with ingress_status=Y found")
+
 failures = []
 rows_written = 0
 hcp_rows = 0

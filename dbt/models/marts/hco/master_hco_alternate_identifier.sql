@@ -9,9 +9,9 @@
 select
     "altValue" as "altValue",
     "IdentifierStatus" as "IdentifierStatus",
-    "X_infa360_identifierIssuer" as "X_infa360_identifierIssuer",
-    "X_infa360_issuingCountry" as "X_infa360_issuingCountry",
-    "X_infa360_issuingState" as "X_infa360_issuingState",
+    "X_informatica_identifierIssuer" as "X_informatica_identifierIssuer",
+    "X_informatica_issuingCountry" as "X_informatica_issuingCountry",
+    "X_informatica_issuingState" as "X_informatica_issuingState",
     "X_activation_date" as "X_activation_date",
     "X_expiration_date" as "X_expiration_date",
     "AlternateIdentifier_parentId" as "AlternateIdentifier_parentId"

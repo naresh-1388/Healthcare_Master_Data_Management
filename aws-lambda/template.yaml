@@ -48,6 +48,18 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: healthcare-mdm-mock-api
+
+  MockMdmHubTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: healthcare-mdm-mock-mdm-hub
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: entityId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: entityId
+          KeyType: HASH
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: pk
@@ -63,7 +75,7 @@ Resources:
       CodeUri: ./package/
       Handler: download_api.lambda_handler
       Runtime: python3.12
-      Timeout: 30
+      Timeout: 120
       MemorySize: 256
       Environment:
         Variables:
@@ -102,11 +114,28 @@ Resources:
 
   DownloadApiUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
-    DependsOn: DownloadApiGatewayprodStage
+    DependsOn: DownloadApiGatewayStage
     Properties:
       ApiStages:
         - ApiId: !Ref DownloadApiGateway
           Stage: !Ref Environment
+
+  DownloadApiGatewayKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub healthcare-mdm-download-api-key-${Environment}
+      Description: API key for the download-api Lambda endpoint
+      Enabled: true
+      StageKeys:
+        - ApiId: !Ref DownloadApiGateway
+          Stage: !Ref Environment
+
+  DownloadApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      UsagePlanId: !Ref DownloadApiUsagePlan
+      KeyId: !Ref DownloadApiGatewayKey
+      KeyType: API_KEY
       Throttle:
         RateLimit: 10
         BurstLimit: 20

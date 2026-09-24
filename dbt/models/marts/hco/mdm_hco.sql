@@ -20,7 +20,7 @@ select
     hco_email."Email" as "ElectronicAddress",
     hco_hierarchy."Parent_Organization_EID" as "X_parent_organization_eid",
     hco_hierarchy."Relationship_Type" as "X_hierarchy_relationship_type",
-    hco_tax."Tax_Number" as "X_infac360ls_tax_number"
+    hco_tax."Tax_Number" as "X_informatica_tax_number"
 from base
 left join {{ ref('stg_HCO_ALTERNATE_NAME') }} as hco_alternate_name
     on base."Source_FK" = hco_alternate_name."Source_FK"

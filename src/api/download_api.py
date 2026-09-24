@@ -582,30 +582,30 @@ def transform_mdm_hub_download_response(
         specialties = []
 
         for specialty in (
-            raw.get("X_infac360ls_Specialty") or []
+            raw.get("X_informatica_Specialty") or []
         ):
             specialties.append(
                 {
                     "Specialty Type": specialty.get(
-                        "X_infac360ls_specialtyType",
+                        "X_informatica_specialtyType",
                         "",
                     ),
                     "Specialty Class": (
                         specialty.get(
-                            "X_infac360ls_specialtyClass"
+                            "X_informatica_specialtyClass"
                         )
                         or {}
                     ).get("Name", ""),
                     "Specialty Rank": {
                         "Code": (
                             specialty.get(
-                                "X_infac360ls_specialtyRank"
+                                "X_informatica_specialtyRank"
                             )
                             or {}
                         ).get("Code", ""),
                         "Name": (
                             specialty.get(
-                                "X_infac360ls_specialtyRank"
+                                "X_informatica_specialtyRank"
                             )
                             or {}
                         ).get("Name", ""),
@@ -684,16 +684,16 @@ def transform_mdm_hub_download_response(
         licenses = []
 
         for license_data in (
-            raw.get("X_infac360ls_License") or []
+            raw.get("X_informatica_License") or []
         ):
             licenses.append(
                 {
                     "License Number": license_data.get(
-                        "X_infac360ls_licenseNumber",
+                        "X_informatica_licenseNumber",
                         "",
                     ),
                     "License Type": license_data.get(
-                        "X_infac360ls_licenseType",
+                        "X_informatica_licenseType",
                         "",
                     ),
                 }
@@ -702,12 +702,12 @@ def transform_mdm_hub_download_response(
         dea_list = []
 
         for dea in (
-            raw.get("X_infac360ls_dea") or []
+            raw.get("X_informatica_dea") or []
         ):
             dea_list.append(
                 {
                     "DEA Number": dea.get(
-                        "X_infac360ls_deaNumber",
+                        "X_informatica_deaNumber",
                         "",
                     )
                 }
@@ -821,7 +821,7 @@ def transform_mdm_hub_download_response(
 
         data = {
             "Title": raw.get(
-                "X_jisb_title",
+                "X_iqvia_title",
                 "",
             ),
             "First Name": raw.get(
@@ -841,7 +841,7 @@ def transform_mdm_hub_download_response(
                 "",
             ),
             "HCP Institution Name": raw.get(
-                "X_infac360ls_department",
+                "X_informatica_department",
                 "",
             ),
             "VLKP URL": raw.get(
@@ -854,7 +854,7 @@ def transform_mdm_hub_download_response(
             ),
             "Third Party Id": third_party_id,
             "Website": raw.get(
-                "X_infac360ls_website",
+                "X_informatica_website",
                 "",
             ),
             "Gender": {
@@ -876,13 +876,13 @@ def transform_mdm_hub_download_response(
             "Type": {
                 "Code": (
                     raw.get(
-                        "X_infac360ls_type"
+                        "X_informatica_type"
                     )
                     or {}
                 ).get("Code", ""),
                 "Name": (
                     raw.get(
-                        "X_infac360ls_type"
+                        "X_informatica_type"
                     )
                     or {}
                 ).get("Name", ""),
@@ -1165,7 +1165,7 @@ def transform_iqvia_to_mdm_hub_post(
             )
         }
 
-        jisb_title = {
+        iqvia_title = {
             "Code": (
                 individual.get("titleCode")
                 or ""
@@ -1187,7 +1187,7 @@ def transform_iqvia_to_mdm_hub_post(
             )
 
             specialty_object = {
-                "X_infac360ls_specialtyClass": {
+                "X_informatica_specialtyClass": {
                     "Code": ada_value.get(
                         "code",
                         "",
@@ -1197,7 +1197,7 @@ def transform_iqvia_to_mdm_hub_post(
                         "",
                     ),
                 },
-                "X_infac360ls_specialtyRank": None,
+                "X_informatica_specialtyRank": None,
             }
 
             group_specialty = ada.get(
@@ -1451,7 +1451,7 @@ def transform_iqvia_to_mdm_hub_post(
         if individual.get("thesisYear"):
             qualification.append(
                 {
-                    "X_infac360ls_degreeYear": (
+                    "X_informatica_degreeYear": (
                         individual.get(
                             "thesisYear"
                         )
@@ -1536,17 +1536,17 @@ def transform_iqvia_to_mdm_hub_post(
             "lastName": last_name,
             "fullName": full_name,
             "gender": gender,
-            "X_infac360ls_type": hcp_type,
+            "X_informatica_type": hcp_type,
             "X_hcp_status": hcp_status,
-            "X_jisb_title": jisb_title,
+            "X_iqvia_title": iqvia_title,
             "prefixName": prefix,
             "AlternateName": [],
             "X_hcp_address": addresses,
             "Phone": phones,
-            "X_infac360ls_Specialty": specialties,
+            "X_informatica_Specialty": specialties,
             "Qualification": qualification,
-            "X_infac360ls_License": [],
-            "X_infac360ls_dea": [],
+            "X_informatica_License": [],
+            "X_informatica_dea": [],
             "AlternateIdentifier": alternate_identifiers,
             "ElectronicAddress": [],
             "_contentMeta": {

@@ -74,6 +74,7 @@ STAGING_TABLE_MAP: Dict[str, str] = {
 }
 
 MASTER_TABLE_MAP: Dict[str, str] = {
+    "hcp": "HCP",
     "hcp_specialty": "HCP_SPECIALTY",
     "hcp_alternate_name": "HCP_ALTERNATE_NAME",
     "hcp_education": "HCP_EDUCATION",
@@ -261,7 +262,14 @@ def _sync_one_table(
     row_count = df.count()
 
     if row_count == 0:
-        print(f"  {dbx_table} → {sf_schema}.{sf_table}: 0 rows (skip)")
+        # Source has 0 rows - TRUNCATE the Snowflake target so it stays in sync.
+        # Do NOT skip: leaving stale data makes Snowflake inconsistent with Databricks.
+        print(f"  {dbx_table} → {sf_schema}.{sf_table}: 0 rows (clearing target)")
+        try:
+            conn.cursor().execute(f"DELETE FROM {sf_full}")
+            conn.commit()
+        except Exception:
+            pass
         return {"source_rows": 0, "deleted_rows": 0, "inserted_rows": 0}
 
     # Cast complex types (map, struct, array) to string for safe pandas
@@ -330,6 +338,9 @@ def _sync_one_table(
             overwrite=False, auto_create_table=True,
         )
 
+        if not success:
+            raise RuntimeError(f"write_pandas returned success=False for {dbx_table} -> {sf_full}")
+
         conn.commit()
 
         print(f"  {dbx_table} → {sf_full}: {row_count} rows (deleted={deleted_rows}, inserted={nrows})")
@@ -358,6 +369,8 @@ def _sync_one_table(
                 overwrite=True, auto_create_table=True,
             )
 
+            if not success:
+                raise RuntimeError(f"write_pandas (overwrite fallback) returned success=False for {dbx_table} → {sf_full}")
             print(f"  {dbx_table} → {sf_full}: {row_count} rows (recreated, inserted={nrows})")
             return {"source_rows": row_count, "deleted_rows": 0, "inserted_rows": nrows}
         else:

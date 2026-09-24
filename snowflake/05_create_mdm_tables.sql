@@ -20,16 +20,16 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO (
     "ElectronicAddress" VARCHAR(4000),
     "X_parent_organization_eid" VARCHAR(4000),
     "X_hierarchy_relationship_type" VARCHAR(4000),
-    "X_infac360ls_tax_number" VARCHAR(4000)
+    "X_informatica_tax_number" VARCHAR(4000)
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_ALTERNATE_IDENTIFIER (
     "SOURCE_ID" VARCHAR(200),
     "altValue" VARCHAR(4000),
     "IdentifierStatus" VARCHAR(4000),
-    "X_infa360_identifierIssuer" VARCHAR(4000),
-    "X_infa360_issuingCountry" VARCHAR(4000),
-    "X_infa360_issuingState" VARCHAR(4000),
+    "X_informatica_identifierIssuer" VARCHAR(4000),
+    "X_informatica_issuingCountry" VARCHAR(4000),
+    "X_informatica_issuingState" VARCHAR(4000),
     "X_activation_date" TIMESTAMP_NTZ,
     "X_expiration_date" TIMESTAMP_NTZ,
     "sourceSystem" VARCHAR(4000),
@@ -43,10 +43,10 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_NAME (
     "HCO_name" VARCHAR(4000),
     "HCO_companyType" VARCHAR(4000),
     "HCO_countryOfIncorporation" VARCHAR(4000),
-    "HCO_X_infa360_bedCount" NUMBER(10,0),
-    "HCO_X_infa360_residentCount" NUMBER(10,0),
-    "HCO_X_infa360_website" VARCHAR(4000),
-    "HCO_X_infa360_type" VARCHAR(4000),
+    "HCO_X_informatica_bedCount" NUMBER(10,0),
+    "HCO_X_informatica_residentCount" NUMBER(10,0),
+    "HCO_X_informatica_website" VARCHAR(4000),
+    "HCO_X_informatica_type" VARCHAR(4000),
     "HCO_X_hco_status" VARCHAR(4000),
     "HCO_X_transparency_reporting_name" VARCHAR(4000),
     "HCO_X_official_name" VARCHAR(4000),
@@ -85,8 +85,8 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_PHONE (
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_SPECIALTY (
     "SOURCE_ID" VARCHAR(200),
     "sourcePKey" VARCHAR(4000),
-    "X_infa360_rank" VARCHAR(4000),
-    "X_infa360_Specialty" VARCHAR(4000),
+    "X_informatica_rank" VARCHAR(4000),
+    "X_informatica_Specialty" VARCHAR(4000),
     "X_specialty_type" VARCHAR(4000),
     "X_specialty_status" VARCHAR(4000),
     "X_specialty_source" VARCHAR(4000),
@@ -103,26 +103,26 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCP (
     "lastName" VARCHAR(4000),
     "fullName" VARCHAR(4000),
     "gender" VARCHAR(4000),
-    "X_infac360ls_type" VARCHAR(4000),
+    "X_informatica_type" VARCHAR(4000),
     "X_hcp_status" VARCHAR(4000),
-    "X_jisb_title" VARCHAR(4000),
+    "X_iqvia_title" VARCHAR(4000),
     "prefixName" VARCHAR(4000),
     "AlternateName" VARCHAR(4000),
     "X_hcp_address" VARCHAR(4000),
     "Phone" VARCHAR(4000),
-    "X_infac360ls_Specialty" VARCHAR(4000),
+    "X_informatica_Specialty" VARCHAR(4000),
     "Qualification" VARCHAR(4000),
-    "X_infac360ls_License" VARCHAR(4000),
-    "X_infac360ls_dea" VARCHAR(4000),
+    "X_informatica_License" VARCHAR(4000),
+    "X_informatica_dea" VARCHAR(4000),
     "AlternateIdentifier" VARCHAR(4000),
     "ElectronicAddress" VARCHAR(4000),
     "X_hco_affiliation_eid" VARCHAR(4000),
     "X_hco_affiliation_type" VARCHAR(4000),
-    "X_infac360ls_language" VARCHAR(4000),
+    "X_informatica_language" VARCHAR(4000),
     "X_origin_university_name" VARCHAR(4000),
     "X_origin_university_code" VARCHAR(4000),
-    "X_infac360ls_tendency_code" VARCHAR(4000),
-    "X_infac360ls_tendency_rank" VARCHAR(4000)
+    "X_informatica_tendency_code" VARCHAR(4000),
+    "X_informatica_tendency_rank" VARCHAR(4000)
 );
 
 -- ============================================================
@@ -133,13 +133,13 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCP (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_specialty (
-    "X_infa360_SpecialtyType" VARCHAR(4000),
-    "X_infa360_SpecialtyClass" VARCHAR(4000),
-    "X_infa360_SpecialtyRank" VARCHAR(4000),
-    "X_infa360_taxonomyName" VARCHAR(4000),
-    "X_infa360_group" VARCHAR(4000),
-    "X_infa360_taxonomy_code" VARCHAR(4000),
-    "X_infa360_subClassification" VARCHAR(4000),
+    "X_informatica_SpecialtyType" VARCHAR(4000),
+    "X_informatica_SpecialtyClass" VARCHAR(4000),
+    "X_informatica_SpecialtyRank" VARCHAR(4000),
+    "X_informatica_taxonomyName" VARCHAR(4000),
+    "X_informatica_group" VARCHAR(4000),
+    "X_informatica_taxonomy_code" VARCHAR(4000),
+    "X_informatica_subClassification" VARCHAR(4000),
     "X_specialty_status" VARCHAR(4000),
     "O_Load_Date" TIMESTAMP_NTZ
 );
@@ -154,10 +154,10 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_alternate_name (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_license (
-    "X_infa360_License_parentId" VARCHAR(4000),
+    "X_informatica_License_parentId" VARCHAR(4000),
     "sourcePKey" VARCHAR(4000),
-    "X_infa360_LicenseType" VARCHAR(4000),
-    "X_infa360_LicenseNumber" VARCHAR(4000),
+    "X_informatica_LicenseType" VARCHAR(4000),
+    "X_informatica_LicenseNumber" VARCHAR(4000),
     "X_country" VARCHAR(4000),
     "X_state" VARCHAR(4000),
     "X_sample_elig" VARCHAR(4000),
@@ -165,19 +165,19 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_license (
     "X_sampleability_lastreceived_date" TIMESTAMP_NTZ,
     "X_sampleability_fed_sanctions_date" TIMESTAMP_NTZ,
     "X_sampleability_desigstatus" VARCHAR(4000),
-    "X_infa360_issueDate" TIMESTAMP_NTZ,
-    "X_infa360_expiryDate" TIMESTAMP_NTZ,
+    "X_informatica_issueDate" TIMESTAMP_NTZ,
+    "X_informatica_expiryDate" TIMESTAMP_NTZ,
     "X_degree" VARCHAR(4000),
     "X_adjLic_expdate" TIMESTAMP_NTZ,
     "X_AdjCode" VARCHAR(4000),
     "X_AdjCodesDescriptions" VARCHAR(4000),
-    "X_infa360_status" VARCHAR(4000)
+    "X_informatica_status" VARCHAR(4000)
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_therapeutic_area (
-    "X_infa360_TherapeuticArea_parentId" VARCHAR(4000),
-    "X_infa360_activeIndicator" VARCHAR(4000),
-    "X_infa360_therapeuticArea" VARCHAR(4000),
+    "X_informatica_TherapeuticArea_parentId" VARCHAR(4000),
+    "X_informatica_activeIndicator" VARCHAR(4000),
+    "X_informatica_therapeuticArea" VARCHAR(4000),
     "O_Load_Date" TIMESTAMP_NTZ
 );
 

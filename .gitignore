@@ -29,3 +29,8 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# dbt compiled artifacts
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/

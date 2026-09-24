@@ -29,7 +29,7 @@ Stages 1-5 are the scheduled batch pipeline (Databricks notebooks
 `03`-`08`, or the Airflow DAG in `airflow/dags/hmdm_pipeline_dag.py`).
 Stages 6-7 are the real-time, per-record API flow used when a new HCP/HCO
 needs to be checked against the MDM hub before it is created (Search
-Before Create), and are exposed via the Flask app in `api/`.
+Before Create), and are exposed via the FastAPI app in `api/`.
 
 ## 3. Layer naming (Unity Catalog / Snowflake)
 
@@ -80,17 +80,22 @@ itemized list. In summary:
   Lambda integration (`src/api/download_api.py`), not the batch
   Source_Raw pipeline.
 
-## 6. Naming note (ORIEO / JISB)
+## 6. Naming convention (Informatica / IQVIA)
 
-Earlier versions of `src/api/*.py` used the names `ORIEO` and `JISB` for
-the two search/match interfaces used by the Search-Before-Create flow.
-These were confirmed to be leftover names from an unrelated
-client/template and have been renamed throughout to `MDM_HUB` (the
-Informatica MDM hub's own search/match API) and `IQVIA` (the direct
-IQVIA individual-search API) respectively, to stay consistent with the
-rest of this project's naming. The one exception is the `X_jisb_title`
-attribute on `MDM.HCP`, which was already an established, audited
-attribute name in the mapping workbook before this rename and was left
-unchanged - flag this to your Informatica admin if you'd like it
-renamed too, since it is a real attribute name in the MDM base object
-model, not just a code-level identifier.
+The project uses explicit vendor naming for all MDM attributes:
+
+- **Informatica** — All Informatica MDM hub attributes use the `X_informatica_*`
+  prefix (e.g. `X_informatica_type`, `X_informatica_Specialty`,
+  `X_informatica_rank`, `HCO_X_informatica_bedCount`). Earlier versions used
+  codenames `infa360` and `infac360ls`; these have been renamed throughout
+  the project (Python, SQL, dbt models, Snowflake DDL) to `informatica`.
+
+- **IQVIA** — All IQVIA-related attributes use the `X_iqvia_*` prefix
+  (e.g. `X_iqvia_title`). The JSON path `iqviaTitle` maps to `X_iqvia_title`.
+  Earlier versions used the codename `jisb`; this has been renamed throughout
+  to `iqvia`.
+
+- **MDM_HUB** — The Informatica MDM hub search/match API is referenced as
+  `MDM_HUB` in `src/api/download_api.py` (previously codenamed `ORIEO`).
+  The `IQVIA` API (previously codenamed `JISB`) is the direct IQVIA
+  individual-search API.

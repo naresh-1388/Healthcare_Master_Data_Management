@@ -1363,6 +1363,10 @@ def get_rules_for_source(
         if "." in source_table
         else source_table
     )
+    # Strip _canonical suffix so DQ_RULES entries (which use bare names)
+    # match canonical-layer tables (e.g. hcp_name_canonical -> hcp_name)
+    if bare_table.endswith("_canonical"):
+        bare_table = bare_table[: -len("_canonical")]
 
     return [
         rule

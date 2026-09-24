@@ -17,8 +17,8 @@ select
     j['Last Name']::VARCHAR as "lastName",
     j['Full Name']::VARCHAR as "fullName",
     j['Gender']['Name']::VARCHAR as "gender",
-    j['Type']['Name']::VARCHAR as "X_infac360ls_type",
+    j['Type']['Name']::VARCHAR as "X_informatica_type",
     j['HCP Status']['Name']::VARCHAR as "X_hcp_status",
-    j['Title']::VARCHAR as "X_jisb_title",
+    j['Title']::VARCHAR as "X_iqvia_title",
     j['Prefix Name']['Name']::VARCHAR as "prefixName"
 from parsed

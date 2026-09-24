@@ -6,48 +6,11 @@ Purpose:
 
 The implemented HCP name transformation uses the documented source columns and mapping expressions.
 """
-
-from __future__ import annotations
-
-import sys
-from datetime import datetime
-from typing import Optional
-
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql import functions as F
-
-try:
-    from ..core.logging_utils import logger, log_event_detail
-    from ..core.runtime_config import (
-        batch_log_tbl,
-        catalog,
-        cluster_id,
-        get_batch_status_filter,
-        get_notebook_run_url,
-        job_id,
-        run_id,
-        update_batch_log_tbl,
-    )
-except ImportError:
-    from core.logging_utils import logger, log_event_detail
-    from core.runtime_config import (
-        batch_log_tbl,
-        catalog,
-        cluster_id,
-        get_batch_status_filter,
-        get_notebook_run_url,
-        job_id,
-        run_id,
-        update_batch_log_tbl,
-    )
-
-spark = SparkSession.builder.getOrCreate()
-
-MODULE_NAME = "Landing_to_Staging"
-
-
-class GracefulExit(Exception):
-    """Expected pipeline termination."""
+# DEPRECATED: This module is legacy and NOT part of the current pipeline.
+# The current pipeline uses Databricks/06_DataQuality_LandToStage.py instead.
+# This module calls get_batch_status_filter("staging", ...) which is NOT a
+# supported batch-status module (supported: rawingestion, stdz, canonical,
+# dq, ingress, egress). Do NOT use this module in production.Expected pipeline termination."""
 
 
 class StagingProcessingError(Exception):

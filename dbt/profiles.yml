@@ -6,7 +6,7 @@ healthcare_mdm:
       account: AXIVKAP-PF58156
       user: HUBM
       password: "@Devansh#4552!"
-      role: ACCOUNTADMIN
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
       database: HMDM_DEV
       warehouse: HMDM_WH
       schema: STAGING

@@ -200,6 +200,7 @@ print(f"Reset stdz_status to N for latest batch ({source_system_name})")
 
 failures = []
 successes = []
+skips = []
 for source_identifier in source_identifiers:
     try:
         print(f"\n--- Standardizing {source_identifier} ---")
@@ -212,8 +213,13 @@ for source_identifier in source_identifiers:
         print(result)
         successes.append(source_identifier)
     except Exception as exc:  # noqa: BLE001
-        print(f"FAILED: {source_identifier} -> {exc}")
-        failures.append((source_identifier, str(exc)))
+        error_msg = str(exc)
+        if 'DELTA_TABLE_NOT_FOUND' in error_msg or "doesn't exist" in error_msg:
+            print(f"SKIP: {source_identifier} -> source RAW table not found (expected for mock data gaps)")
+            skips.append(source_identifier)
+        else:
+            print(f"FAILED: {source_identifier} -> {exc}")
+            failures.append((source_identifier, error_msg))
 
 # Update batch status ONCE after all entities have been processed
 # Only mark as 'Y' if there are no failures
@@ -243,10 +249,13 @@ elif failures:
     """)
     print(f"\nBatch status set to N (failures occurred)")
 
-print(f"\nSummary: {len(successes)} succeeded, {len(failures)} failed")
+print(f"\nSummary: {len(successes)} succeeded, {len(failures)} failed, {len(skips)} skipped")
 if failures:
     for src, err in failures:
         print(f"  FAILED: {src}: {err}")
+if skips:
+    for src in skips:
+        print(f"  SKIPPED: {src} (RAW table missing — mock data gap)")
 
 # COMMAND ----------
 

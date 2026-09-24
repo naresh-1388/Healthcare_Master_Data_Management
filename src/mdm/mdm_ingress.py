@@ -389,7 +389,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_name"
         ),
-        "tgt_attribute": "HCO_X_infa360_bedCount",
+        "tgt_attribute": "HCO_X_informatica_bedCount",
         "tgt_data_type": "integer",
     },
     {
@@ -400,7 +400,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_name"
         ),
-        "tgt_attribute": "HCO_X_infa360_residentCount",
+        "tgt_attribute": "HCO_X_informatica_residentCount",
         "tgt_data_type": "integer",
     },
     {
@@ -411,7 +411,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_name"
         ),
-        "tgt_attribute": "HCO_X_infa360_website",
+        "tgt_attribute": "HCO_X_informatica_website",
         "tgt_data_type": "string",
     },
     {
@@ -422,7 +422,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_name"
         ),
-        "tgt_attribute": "HCO_X_infa360_type",
+        "tgt_attribute": "HCO_X_informatica_type",
         "tgt_data_type": "string",
     },
     {
@@ -653,7 +653,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_alternate_identifier"
         ),
-        "tgt_attribute": "X_infa360_identifierIssuer",
+        "tgt_attribute": "X_informatica_identifierIssuer",
         "tgt_data_type": "string",
     },
     {
@@ -666,7 +666,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_alternate_identifier"
         ),
-        "tgt_attribute": "X_infa360_issuingCountry",
+        "tgt_attribute": "X_informatica_issuingCountry",
         "tgt_data_type": "string",
     },
     {
@@ -679,7 +679,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_alternate_identifier"
         ),
-        "tgt_attribute": "X_infa360_issuingState",
+        "tgt_attribute": "X_informatica_issuingState",
         "tgt_data_type": "string",
     },
     {
@@ -923,7 +923,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_specialty"
         ),
-        "tgt_attribute": "X_infa360_rank",
+        "tgt_attribute": "X_informatica_rank",
         "tgt_data_type": "string",
     },
     {
@@ -936,7 +936,7 @@ HCO_INGRESS_MAPPING = [
         "tgt_tbl_nm": (
             "hco_specialty"
         ),
-        "tgt_attribute": "X_infa360_Specialty",
+        "tgt_attribute": "X_informatica_Specialty",
         "tgt_data_type": "string",
     },
     {
@@ -1026,36 +1026,104 @@ HCO_INGRESS_MAPPING = [
 # physical Informatica/Snowflake tables.
 HCP_TARGET_TABLE = "hcp"
 # Development smoke-test mapping for the validated HCP canonical payload.
-DEV_HCP_FIELD_MAPPING = {
-    # hcp_name fields (staging.hcp_name)
-    "iqvia_id": "individualEid",
-    "first_name": "firstName",
-    "middle_name": "middleName",
-    "last_name": "lastName",
-    "country_code": "countryCode",
-    "full_name": "fullName",
-    "gender": "gender",
-    "prefix": "prefixName",
-    "transparency_reporting_name": "X_transparency_reporting_name",
-    "status": "X_hcp_status",
-    "type": "X_infac360ls_type",
-    "jisb_title": "X_jisb_title",
-    # hcp_alternate_name fields
-    "alternate_name": "AlternateName",
-    # hcp_address fields
-    "address": "X_hcp_address",
-    # hcp_phone fields
-    "phone": "Phone",
-    # hcp_email fields
-    "email": "ElectronicAddress",
-    # hcp_specialty fields
-    "specialty": "X_infac360ls_Specialty",
-    "qualification": "Qualification",
-    # hcp_identification fields
-    "license_number": "X_infac360ls_License",
-    "dea_number": "X_infac360ls_dea",
-    "alternate_identifier": "AlternateIdentifier",
+# ---------------------------------------------------------------------------
+# Entity-specific HCP field mappings.
+# Keys prefixed with "json:" are extracted from the response_json column using
+# from_json / bracket notation.  All other keys are direct DataFrame columns.
+# This replaces the previous single flat DEV_HCP_FIELD_MAPPING which applied
+# the same generic mapping to every HCP entity regardless of source table.
+# ---------------------------------------------------------------------------
+
+HCP_ENTITY_FIELD_MAPPINGS: Dict[str, Dict[str, str]] = {
+    "hcp_name": {
+        "iqvia_id": "individualEid",
+        "first_name": "firstName",
+        "middle_name": "middleName",
+        "last_name": "lastName",
+        "country_code": "countryCode",
+        "full_name": "fullName",
+        "gender": "gender",
+        "json:title": "prefixName",
+        "json:transparencyReportingName": "X_transparency_reporting_name",
+        "json:status": "X_hcp_status",
+        "json:type": "X_informatica_type",
+        "json:iqviaTitle": "X_iqvia_title",
+    },
+    "hcp_specialty": {
+        "iqvia_id": "individualEid",
+        "json:specialty": "X_informatica_Specialty",
+        "json:specialtyType": "X_specialty_type",
+        "json:specialtyRank": "X_informatica_rank",
+        "json:specialtyStatus": "X_specialty_status",
+        "json:qualification": "Qualification",
+    },
+    "hcp_alternate_name": {
+        "iqvia_id": "individualEid",
+        "json:alternateName": "AlternateName",
+        "json:alternateNameType": "AlternateNameType",
+    },
+    "hcp_address": {
+        "iqvia_id": "individualEid",
+        "json:addresses[0].addressLine1": "X_hcp_address",
+        "json:addresses[0].city": "X_hcp_city",
+        "json:addresses[0].postalCode": "X_hcp_postal_code",
+        "json:addresses[0].country": "X_hcp_country",
+    },
+    "hcp_phone": {
+        "iqvia_id": "individualEid",
+        "json:phones[0].phoneNumber": "Phone",
+        "json:phones[0].phoneType": "X_phone_type",
+    },
+    "hcp_email": {
+        "iqvia_id": "individualEid",
+        "json:emails[0].email": "ElectronicAddress",
+        "json:emails[0].emailType": "X_email_type",
+    },
+    "hcp_identification": {
+        "iqvia_id": "individualEid",
+        "json:licenseNumber": "X_informatica_License",
+        "json:deaNumber": "X_informatica_dea",
+        "json:alternateIdentifier": "AlternateIdentifier",
+    },
+    "hcp_education": {
+        "iqvia_id": "individualEid",
+        "json:qualification": "Qualification",
+        "json:institutionName": "X_institution_name",
+        "json:graduationYear": "X_graduation_year",
+    },
+    "hcp_tax": {
+        "iqvia_id": "individualEid",
+        "json:deaNumber": "X_informatica_dea",
+        "json:deaType": "X_dea_type",
+    },
+    "hcp_language": {
+        "iqvia_id": "individualEid",
+        "json:language": "X_language",
+        "json:languageCode": "X_language_code",
+    },
+    "hcp_tendencies": {
+        "iqvia_id": "individualEid",
+        "json:tendency": "X_tendency",
+        "json:tendencyValue": "X_tendency_value",
+    },
+    "hcp_origin_university": {
+        "iqvia_id": "individualEid",
+        "json:universityName": "X_university_name",
+        "json:graduationYear": "X_graduation_year",
+    },
+    "hcp_hco_affiliation": {
+        "iqvia_id": "individualEid",
+        "json:organizationId": "X_organization_id",
+        "json:affiliationType": "X_affiliation_type",
+        "json:startDate": "X_affiliation_start",
+        "json:endDate": "X_affiliation_end",
+    },
 }
+
+# Keep the old name as an alias for backward compatibility (flattened union).
+DEV_HCP_FIELD_MAPPING = {}
+for _m in HCP_ENTITY_FIELD_MAPPINGS.values():
+    DEV_HCP_FIELD_MAPPING.update(_m)
 
 HCP_SOURCE_TO_MDM = {
     "hcp_name": "hcp", "hcp_specialty": "hcp_specialty",
@@ -1067,12 +1135,66 @@ HCP_SOURCE_TO_MDM = {
     "hcp_hco_affiliation": "hcp_hco_affiliation",
 }
 
-DEV_HCO_FIELD_MAPPING = {
-    "iqvia_id": "organizationEid",
-    "organization_name": "organizationName",
-    "organization_type": "organizationType",
-    "country_code": "countryCode",
+# ---------------------------------------------------------------------------
+# Entity-specific HCO field mappings (replaces generic DEV_HCO_FIELD_MAPPING).
+# ---------------------------------------------------------------------------
+
+HCO_ENTITY_FIELD_MAPPINGS: Dict[str, Dict[str, str]] = {
+    "hco_name": {
+        "iqvia_id": "organizationEid",
+        "json:organizationName": "organizationName",
+        "json:organizationType": "organizationType",
+        "country_code": "countryCode",
+    },
+    "hco_address": {
+        "iqvia_id": "organizationEid",
+        "json:addresses[0].addressLine1": "Address_Line_1",
+        "json:addresses[0].city": "City",
+        "json:addresses[0].postalCode": "Postal_Code",
+        "json:addresses[0].country": "Country",
+    },
+    "hco_phone": {
+        "iqvia_id": "organizationEid",
+        "json:phones[0].phoneNumber": "Phone",
+    },
+    "hco_email": {
+        "iqvia_id": "organizationEid",
+        "json:emails[0].email": "Email",
+    },
+    "hco_alternate_name": {
+        "iqvia_id": "organizationEid",
+        "json:alternateName": "Alternate_Name",
+        "json:alternateNameType": "Alternate_Name_Type",
+    },
+    "hco_identification": {
+        "iqvia_id": "organizationEid",
+        "json:alternateIdentifier": "Alternate_Identifier",
+        "json:identifierType": "X_identifier_type",
+    },
+    "hco_specialty": {
+        "iqvia_id": "organizationEid",
+        "json:specialty": "Specialty",
+        "json:specialtyType": "Specialty_Type",
+        "json:specialtyRank": "Specialty_Rank",
+        "json:status": "Status",
+    },
+    "hco_hco_hierarchy": {
+        "iqvia_id": "organizationEid",
+        "json:parentOrganizationId": "X_parent_org_id",
+        "json:parentOrganizationName": "X_parent_org_name",
+        "json:relationshipType": "X_relationship_type",
+    },
+    "hco_tax": {
+        "iqvia_id": "organizationEid",
+        "json:taxId": "X_tax_id",
+        "json:taxType": "X_tax_type",
+    },
 }
+
+# Keep the old name as an alias for backward compatibility.
+DEV_HCO_FIELD_MAPPING = {}
+for _m in HCO_ENTITY_FIELD_MAPPINGS.values():
+    DEV_HCO_FIELD_MAPPING.update(_m)
 
 HCO_SOURCE_TO_MDM = {
     "hco_name": ["hco", "hco_name"],
@@ -1083,13 +1205,62 @@ HCO_SOURCE_TO_MDM = {
     "hco_hco_hierarchy": "hco_hco_hierarchy", "hco_tax": "hco_tax",
 }
 
+def _get_entity_mapping(
+    source_table: str,
+    entity_type: str,
+) -> Dict[str, str]:
+    """Return the entity-specific field mapping for the given source table.
+
+    Falls back to the flat DEV_*_FIELD_MAPPING if the entity is not found
+    in the entity-specific dictionaries.
+    """
+    short = source_table.split(".")[-1].lower()
+    if entity_type.upper() == "HCP":
+        return HCP_ENTITY_FIELD_MAPPINGS.get(short, DEV_HCP_FIELD_MAPPING)
+    elif entity_type.upper() == "HCO":
+        return HCO_ENTITY_FIELD_MAPPINGS.get(short, DEV_HCO_FIELD_MAPPING)
+    return {}
+
+def _extract_json_columns(
+    df: DataFrame,
+    field_mapping: Dict[str, str],
+) -> DataFrame:
+    """Extract fields from response_json for any mapping key prefixed with 'json:'.
+
+    Adds the extracted value as a new column named after the key (without
+    the 'json:' prefix) so that prepare_*_ingress can use it as a normal
+    column.  Uses get_json_object for compatibility with both Delta and
+    standard Parquet sources.
+    """
+    json_keys = [k for k in field_mapping if k.startswith("json:")]
+    if not json_keys:
+        return df
+
+    if "response_json" not in df.columns:
+        return df
+
+    for key in json_keys:
+        json_path = key[5:]  # strip "json:" prefix
+        # Convert dot-notation + bracket-index to Spark JSON path
+        # e.g. "addresses[0].addressLine1" -> "$.addresses[0].addressLine1"
+        spark_path = f"$.{json_path}"
+        new_col_name = f"_json_{json_path.replace('.', '_').replace('[', '_').replace(']', '')}"
+        df = df.withColumn(
+            new_col_name,
+            F.get_json_object(F.col("response_json"), spark_path),
+        )
+        # Update the mapping to use the new column name instead of json: prefix
+        field_mapping[new_col_name] = field_mapping.pop(key)
+
+    return df
+
 HCP_PAYLOAD_ATTRIBUTES = [
     "X_transparency_reporting_name",
     "firstName", "middleName", "lastName", "fullName", "gender",
-    "X_infac360ls_type", "X_hcp_status", "X_jisb_title", "prefixName",
+    "X_informatica_type", "X_hcp_status", "X_iqvia_title", "prefixName",
     "AlternateName", "X_hcp_address", "Phone",
-    "X_infac360ls_Specialty", "Qualification",
-    "X_infac360ls_License", "X_infac360ls_dea",
+    "X_informatica_Specialty", "Qualification",
+    "X_informatica_License", "X_informatica_dea",
     "AlternateIdentifier", "ElectronicAddress",
 ]
 
@@ -1135,13 +1306,17 @@ def prepare_hcp_ingress(
             "Do not derive it from an Informatica logical object name."
         )
 
-    # Use the DEV HCP field mapping for any HCP target when not explicitly supplied.
+    # Use entity-specific HCP field mapping when not explicitly supplied.
     if not field_mapping:
-        field_mapping = dict(DEV_HCP_FIELD_MAPPING)
+        field_mapping = _get_entity_mapping(source_table, "HCP")
         logger.info(
-            "Using DEV_HCP field mapping for target %s.",
+            "Using entity-specific HCP field mapping for source=%s target=%s.",
+            source_table,
             target_table,
         )
+
+    # Extract fields from response_json for json: prefixed mapping keys.
+    df = _extract_json_columns(df, field_mapping)
 
     source_columns = {c.lower(): c for c in df.columns}
     select_exprs = []
@@ -1191,8 +1366,11 @@ def prepare_hco_simple_ingress(
         raise ValueError("Physical HCO ingress target_table is required.")
 
     if not field_mapping:
-        field_mapping = dict(DEV_HCO_FIELD_MAPPING)
-        logger.info("Using DEV_HCO field mapping for target %s.", target_table)
+        field_mapping = _get_entity_mapping(source_table, "HCO")
+        logger.info("Using entity-specific HCO field mapping for source=%s target=%s.", source_table, target_table)
+
+    # Extract fields from response_json for json: prefixed mapping keys.
+    df = _extract_json_columns(df, field_mapping)
 
     source_columns = {c.lower(): c for c in df.columns}
     select_exprs = []

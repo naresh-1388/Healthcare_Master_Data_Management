@@ -9,13 +9,13 @@
 -- as audited in the workbook).
 
 select
-    "X_infa360_SpecialtyType" as "Specialty",
-    "X_infa360_SpecialtyClass" as "Specialty_Type",
-    "X_infa360_SpecialtyRank" as "Specialty_Rank",
-    "X_infa360_taxonomyName" as "Taxonomy_Name",
-    "X_infa360_group" as "Group",
-    "X_infa360_taxonomy_code" as "Taxonomy_Code",
-    "X_infa360_subClassification" as "Sub_Classification",
+    "X_informatica_SpecialtyType" as "Specialty",
+    "X_informatica_SpecialtyClass" as "Specialty_Type",
+    "X_informatica_SpecialtyRank" as "Specialty_Rank",
+    "X_informatica_taxonomyName" as "Taxonomy_Name",
+    "X_informatica_group" as "Group",
+    "X_informatica_taxonomy_code" as "Taxonomy_Code",
+    "X_informatica_subClassification" as "Sub_Classification",
     "X_specialty_status" as "Specialty_Status",
     "O_Load_Date" as "Load_Date"
 from {{ source('mdm_hub', 'hcp_specialty') }}

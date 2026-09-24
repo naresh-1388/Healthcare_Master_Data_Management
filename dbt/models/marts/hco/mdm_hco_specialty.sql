@@ -5,8 +5,8 @@
 
 select
     "Specialty_PK" as "sourcePKey",
-    "Specialty_Rank" as "X_infa360_rank",
-    "Specialty" as "X_infa360_Specialty",
+    "Specialty_Rank" as "X_informatica_rank",
+    "Specialty" as "X_informatica_Specialty",
     "Specialty_Type" as "X_specialty_type",
     "Status" as "X_specialty_status",
     "Specialty_Source" as "X_specialty_source",

@@ -33,9 +33,9 @@ MDM_HUB_TEMPLATE: Dict[str, Any] = {
             "fullName": "",
             "lastName": "",
             "X_vlkp_url": "",
-            "X_infac360ls_department": "",
+            "X_informatica_department": "",
             "gender": {"Code": "", "Name": ""},
-            "X_infac360ls_type": {"Code": "", "Name": ""},
+            "X_informatica_type": {"Code": "", "Name": ""},
             "X_hcp_status": {"Code": "", "Name": ""},
             "AlternateName": [{"AlternateName": ""}],
             "X_hcp_address": [
@@ -50,20 +50,20 @@ MDM_HUB_TEMPLATE: Dict[str, Any] = {
                     "X_address_status": {"Code": "", "Name": ""},
                 }
             ],
-            "X_infac360ls_Specialty": [
+            "X_informatica_Specialty": [
                 {
-                    "X_infac360ls_specialtyType": "",
-                    "X_infac360ls_specialtyRank": {"Code": "", "Name": ""},
+                    "X_informatica_specialtyType": "",
+                    "X_informatica_specialtyRank": {"Code": "", "Name": ""},
                     "X_specialty_status": {"Code": "", "Name": ""},
                 }
             ],
-            "X_infac360ls_License": [
+            "X_informatica_License": [
                 {
-                    "X_infac360ls_licenseNumber": "",
-                    "X_infac360ls_licenseType": "",
+                    "X_informatica_licenseNumber": "",
+                    "X_informatica_licenseType": "",
                 }
             ],
-            "X_infac360ls_dea": [{"X_infac360ls_deaNumber": ""}],
+            "X_informatica_dea": [{"X_informatica_deaNumber": ""}],
             "AlternateIdentifier": [
                 {
                     "alternateIdentifierType": {"Code": "", "Name": ""},

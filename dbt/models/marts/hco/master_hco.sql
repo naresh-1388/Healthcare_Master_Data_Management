@@ -16,5 +16,5 @@ select
     "ElectronicAddress" as "ElectronicAddress",
     "X_parent_organization_eid" as "X_parent_organization_eid",
     "X_hierarchy_relationship_type" as "X_hierarchy_relationship_type",
-    "X_infac360ls_tax_number" as "X_infac360ls_tax_number"
+    "X_informatica_tax_number" as "X_informatica_tax_number"
 from {{ ref('mdm_hco') }}

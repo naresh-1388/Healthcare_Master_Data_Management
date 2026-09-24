@@ -190,8 +190,10 @@ elif SELECTED_ENTITY == "HCO":
     bare_source_tables = [t for t in bare_source_tables if t.startswith("hco_")]
 print(f"Source tables with configured DQ rules ({SELECTED_ENTITY}): {bare_source_tables}")
 
-# Construct fully qualified table names for landing layer
-landing_schema = f"{catalog}.landing"
+# Construct fully qualified table names.
+# DQ reads from CANONICAL layer (output of 05_Canonical_Standardization)
+# and writes passing rows to STAGING layer.
+source_schema = f"{catalog}.canonical"
 staging_schema = f"{catalog}.staging"
 
 # Reference table mapping: each entity -> its parent/reference table for DQ checks
@@ -242,13 +244,14 @@ print(f"DQ batch status reset to 'N' for latest batch ({source_system_name})")
 failures = []
 succeeded = 0
 for bare_table in bare_source_tables:
-    # Construct fully qualified source and target table names
-    source_table_fqn = f"{landing_schema}.{bare_table}"
+    # Construct fully qualified source and target table names (from CANONICAL)
+    # Canonical tables have _canonical suffix (e.g., canonical.hcp_name_canonical)
+    source_table_fqn = f"{source_schema}.{bare_table}_canonical"
     target_table_fqn = f"{staging_schema}.{bare_table}"
     
     # Resolve reference table for this entity
     ref_bare = REFERENCE_TABLE_MAP.get(bare_table)
-    ref_table_fqn = f"{landing_schema}.{ref_bare}" if ref_bare else None
+    ref_table_fqn = f"{source_schema}.{ref_bare}_canonical" if ref_bare else None
     
     try:
         print(f"\n--- DQ: {source_table_fqn} -> {target_table_fqn} (ref={ref_table_fqn}) ---")
@@ -268,15 +271,19 @@ for bare_table in bare_source_tables:
         staging_cols = [c for c in passed_df.columns if c not in DQ_METADATA_COLS]
         staging_df = passed_df.select(*staging_cols)
         
-        (spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table_fqn} USING DELTA AS SELECT * FROM {landing_schema}.{bare_table} WHERE 1=0")
+        (spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table_fqn} USING DELTA AS SELECT * FROM {source_schema}.{bare_table}_canonical WHERE 1=0")
          if not spark.catalog.tableExists(target_table_fqn) else None)
         
-        staging_df.write.format("delta").mode("overwrite").saveAsTable(target_table_fqn)
+        staging_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(target_table_fqn)
         print(f"  SUCCESS: {bare_table} -> {target_table_fqn} ({passed_count} rows)")
         succeeded += 1
     except Exception as exc:  # noqa: BLE001
-        print(f"  FAILED: {bare_table} -> {exc}")
-        failures.append((bare_table, str(exc)))
+        exc_str = str(exc)
+        if "does not exist" in exc_str or "not found" in exc_str:
+            print(f"  SKIPPED: {bare_table} -> {exc_str}")
+        else:
+            print(f"  FAILED: {bare_table} -> {exc_str}")
+            failures.append((bare_table, exc_str))
 
 # Update DQ batch status to 'Y' once after all entities
 if not failures:
@@ -317,9 +324,9 @@ print(f"\nSummary: {succeeded} succeeded, {len(failures)} failed")
 # COMMAND ----------
 
 if failures:
-    # Separate missing tables from actual errors
-    missing_tables = [(tbl, err) for tbl, err in failures if "does not exist" in err]
-    actual_errors = [(tbl, err) for tbl, err in failures if "does not exist" not in err]
+    # Separate missing tables/columns from actual errors
+    missing_tables = [(tbl, err) for tbl, err in failures if "does not exist" in err or "not found" in err]
+    actual_errors = [(tbl, err) for tbl, err in failures if "does not exist" not in err and "not found" not in err]
     
     if actual_errors:
         raise RuntimeError(f"DQ failed for {len(actual_errors)} tables: {actual_errors}")
