@@ -210,6 +210,19 @@ else:
 # This is the bridge that fills Snowflake's empty tables
 # so dbt models and Snowpark can operate on real data.
 
+# Reset snowflake_sync_status to 'N' so we can re-sync after pipeline re-run
+spark.sql("""
+    UPDATE HMDM_DEV.util.ctl_batch_log_tbl
+    SET snowflake_sync_status = 'N'
+    WHERE source_system_name = 'IQVIA_API'
+      AND batch_id = (
+          SELECT MAX(batch_id)
+          FROM HMDM_DEV.util.ctl_batch_log_tbl
+          WHERE source_system_name = 'IQVIA_API'
+      )
+""")
+print("Reset snowflake_sync_status to 'N' for latest IQVIA_API batch")
+
 # Check if Snowflake sync is already done for the latest batch.
 # If snowflake_sync_status = 'Y' for the latest IQVIA_API batch,
 # the sync is skipped to avoid re-pushing unchanged data.
