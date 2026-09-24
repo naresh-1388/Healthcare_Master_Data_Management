@@ -36,7 +36,7 @@ CREATE ROLE IF NOT EXISTS HMDM_DEV_ROLE
 -------------------------------------------------------------------------------
 -- Replace <YOUR_SNOWFLAKE_USER> with your actual Snowflake login username.
 
-GRANT ROLE HMDM_DEV_ROLE TO USER <YOUR_SNOWFLAKE_USER>;
+GRANT ROLE HMDM_DEV_ROLE TO USER HUBM;
 
 
 -------------------------------------------------------------------------------

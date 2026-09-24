@@ -11,6 +11,8 @@ CREATE SCHEMA IF NOT EXISTS HMDM_DEV.RAW
 CREATE SCHEMA IF NOT EXISTS HMDM_DEV.LANDING
     COMMENT = 'Landing layer - Raw_to_Land sheet: Source_FK + surrogate PK + standardized column names + audit columns.';
 
+CREATE SCHEMA IF NOT EXISTS HMDM_DEV.CANONICAL;
+
 CREATE SCHEMA IF NOT EXISTS HMDM_DEV.STAGING
     COMMENT = 'Staging layer - Land_to_Stag sheet: Landing data that has passed the configured DQ rules.';
 
