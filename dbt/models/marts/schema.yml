@@ -1,0 +1,118 @@
+version: 2
+
+models:
+  # ---- HCP marts ----
+  - name: mdm_hcp
+    description: "Joins 14 HCP staging views on Source_FK to produce the consolidated HCP MDM record."
+    columns:
+      - name: Source_FK
+        description: "Primary business key (iqvia_id) for the HCP entity."
+        tests:
+          - not_null
+  - name: master_hcp
+    description: "Final HCP master table with renamed columns for downstream consumption."
+    columns:
+      - name: Source_FK
+        description: "Primary business key (iqvia_id) for the HCP entity."
+        tests:
+          - not_null
+  - name: master_hcp_alternate_name
+    description: "HCP alternate name child master table, reads from mdm_hub source."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCP record."
+        tests:
+          - not_null
+  - name: master_hcp_license
+    description: "HCP license child master table, reads from mdm_hub source."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCP record."
+        tests:
+          - not_null
+  - name: master_hcp_specialty
+    description: "HCP specialty child master table, reads from mdm_hub source."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCP record."
+        tests:
+          - not_null
+  - name: master_hcp_therapeutic_area
+    description: "HCP therapeutic area child master table, reads from mdm_hub source."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCP record."
+        tests:
+          - not_null
+
+  # ---- HCO marts ----
+  - name: mdm_hco
+    description: "Joins 5 HCO staging views to produce the consolidated HCO MDM record."
+    columns:
+      - name: Source_FK
+        description: "Primary business key (iqvia_id) for the HCO entity."
+        tests:
+          - not_null
+  - name: master_hco
+    description: "Final HCO master table with renamed columns for downstream consumption."
+    columns:
+      - name: Source_FK
+        description: "Primary business key (iqvia_id) for the HCO entity."
+        tests:
+          - not_null
+  - name: master_hco_name
+    description: "HCO name child master table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: master_hco_phone
+    description: "HCO phone child master table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: master_hco_specialty
+    description: "HCO specialty child master table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: master_hco_alternate_identifier
+    description: "HCO alternate identifier child master table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: mdm_hco_name
+    description: "HCO name staging mart, joins staging views."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: mdm_hco_phone
+    description: "HCO phone staging mart, joins staging views."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: mdm_hco_specialty
+    description: "HCO specialty staging mart, joins staging views."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null
+  - name: mdm_hco_alternate_identifier
+    description: "HCO alternate identifier staging mart, joins staging views."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent HCO record."
+        tests:
+          - not_null

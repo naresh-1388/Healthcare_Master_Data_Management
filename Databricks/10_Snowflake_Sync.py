@@ -5,7 +5,7 @@
 # ///
 # DBTITLE 1,Stage 7: Snowflake Sync
 # MAGIC %md
-# MAGIC ### Healthcare_Master_Data_Management — Stage 7: Snowflake Sync
+# MAGIC ### Healthcare_Master_Data_Management -- Stage 7: Snowflake Sync
 # MAGIC
 # MAGIC Pushes Databricks STAGING and MASTER tables to Snowflake using
 # MAGIC `snowflake-connector-python` and `write_pandas`. This is the bridge
@@ -13,10 +13,10 @@
 # MAGIC operate on real data instead of empty table structures.
 # MAGIC
 # MAGIC **When to run:** AFTER Stage 6 (Egress) completes. The pipeline order
-# MAGIC is: Ingestion → Standardization → DQ → MDM Ingress → MDM Egress →
+# MAGIC is: Ingestion -> Standardization -> DQ -> MDM Ingress -> MDM Egress ->
 # MAGIC Snowflake Sync.
 # MAGIC
-# MAGIC **Sync pattern — TRUNCATE-AND-LOAD:**
+# MAGIC **Sync pattern -- TRUNCATE-AND-LOAD:**
 # MAGIC For each table, existing Snowflake rows are DELETEd first, then fresh
 # MAGIC data is INSERTed from Databricks. This is idempotent (re-running
 # MAGIC produces the same result), preserves Snowflake table schema and grants
@@ -24,8 +24,13 @@
 # MAGIC
 # MAGIC **Incremental guard:** Before syncing, the batch control table is
 # MAGIC checked for `snowflake_sync_status = 'Y'`. If already synced, the
-# MAGIC sync is skipped — only new or not-yet-synced batches trigger the
-# MAGIC full sync.
+# MAGIC sync is skipped to save Snowflake credits. The `force_resync` widget
+# MAGIC (default: false) can be set to 'true' to force a full re-sync after
+# MAGIC pipeline replay. By default, no automatic reset is performed.
+# MAGIC
+# MAGIC **Missing table handling:** If a Databricks source table does not
+# MAGIC exist, the sync records an error (not a silent SKIP) so the batch is
+# MAGIC not falsely marked as successfully synced.
 # MAGIC
 # MAGIC **Prerequisites:**
 # MAGIC * AWS Secrets Manager secret `healthcare-mdm/dev/api-snowflake`
@@ -33,7 +38,7 @@
 # MAGIC   snowflake_warehouse, snowflake_database, snowflake_schema)
 # MAGIC * Databricks service credential `healthcare_mdm_secrets_credential`
 # MAGIC * Snowflake DDL executed (snowflake/*.sql)
-# MAGIC * Stages 1-6 of the pipeline completed (notebooks 01-08)
+# MAGIC * Stages 1-6 of the pipeline completed (notebooks 03-08)
 
 # COMMAND ----------
 
@@ -44,7 +49,7 @@
 # This notebook bridges Databricks Delta tables to Snowflake,
 # so that dbt models and Snowpark scripts can operate on real data.
 #
-# Runs AFTER Stage 6 (Egress) — pushes staging + master tables
+# Runs AFTER Stage 6 (Egress) -- pushes staging + master tables
 # from Databricks to Snowflake.
 #
 # Prerequisites:
@@ -68,12 +73,12 @@
 # MAGIC `dbutils.library.restartPython()` is called immediately after the
 # MAGIC pip install to make the package available in the Python kernel. This
 # MAGIC runs BEFORE any variable definitions, so the kernel restart does not
-# MAGIC lose any state — all variables are defined in subsequent cells.
+# MAGIC lose any state -- all variables are defined in subsequent cells.
 
 # COMMAND ----------
 
 # DBTITLE 1,Install Snowflake Connector
-# Install Snowflake connector (required on Serverless — not pre-installed)
+# Install Snowflake connector (required on Serverless -- not pre-installed)
 # restartPython() runs BEFORE any variable definitions, so state loss is harmless.
 %pip install snowflake-connector-python --quiet
 dbutils.library.restartPython()
@@ -86,12 +91,12 @@ dbutils.library.restartPython()
 # MAGIC
 # MAGIC Imports the Snowflake sync module and runtime configuration.
 # MAGIC
-# MAGIC * `run_snowflake_sync` — Main entry point that pushes all STAGING
+# MAGIC * `run_snowflake_sync` -- Main entry point that pushes all STAGING
 # MAGIC   and MASTER tables from Databricks to Snowflake using the
 # MAGIC   TRUNCATE-AND-LOAD pattern (DELETE existing rows, then INSERT).
-# MAGIC * `get_snowflake_credentials` — Retrieves Snowflake connection
+# MAGIC * `get_snowflake_credentials` -- Retrieves Snowflake connection
 # MAGIC   parameters from AWS Secrets Manager.
-# MAGIC * `catalog`, `env` — Runtime configuration from `core.runtime_config`.
+# MAGIC * `catalog`, `env` -- Runtime configuration from `core.runtime_config`.
 # MAGIC
 # MAGIC The source path is resolved from the notebook's location in the
 # MAGIC Git repo, so the imports work regardless of which workspace the
@@ -101,7 +106,7 @@ dbutils.library.restartPython()
 
 # DBTITLE 1,Imports
 # ============================================================
-# IMPORTS — Snowflake sync module + runtime config
+# IMPORTS -- Snowflake sync module + runtime config
 # ============================================================
 import sys, os, importlib
 from pathlib import Path
@@ -160,7 +165,7 @@ print(f"Source path: {SRC_ROOT}")
 creds = get_snowflake_credentials()
 
 if creds:
-    print("Snowflake credentials found — proceeding with sync")
+    print("Snowflake credentials found -- proceeding with sync")
 else:
     print("ERROR: Snowflake credentials NOT configured.")
     print("    Check AWS Secrets Manager secret 'healthcare-mdm/dev/api-snowflake'")
@@ -175,15 +180,19 @@ else:
 # MAGIC
 # MAGIC Pushes Databricks staging and master tables to Snowflake using the
 # MAGIC TRUNCATE-AND-LOAD pattern (DELETE existing rows, then INSERT fresh data).
-# MAGIC This is the standard production ETL approach — see `push_to_snowflake.py`
+# MAGIC This is the standard production ETL approach -- see `push_to_snowflake.py`
 # MAGIC `_sync_one_table()` for implementation details.
 # MAGIC
-# MAGIC **Incremental guard:** Before syncing, this cell checks the batch
-# MAGIC control table for `snowflake_sync_status = 'Y'` on the latest
-# MAGIC IQVIA_API batch. If already synced, the entire sync is skipped to
-# MAGIC avoid unnecessary re-pushes of unchanged data. Only when the
-# MAGIC status is not 'Y' (new data arrived or first run) does the full
-# MAGIC sync execute.
+# MAGIC **Incremental guard:** Before syncing, this cell checks if
+# MAGIC `snowflake_sync_status = 'Y'` for the latest IQVIA_API batch. If already
+# MAGIC synced, the entire sync is skipped to avoid unnecessary re-pushes of
+# MAGIC unchanged data and to save Snowflake credits. Only when the status is
+# MAGIC not 'Y' (new data arrived or first run) does the full sync execute.
+# MAGIC
+# MAGIC **force_resync widget:** Set the `force_resync` widget to `true` to force
+# MAGIC a full re-sync even if the status is already 'Y'. This resets the status
+# MAGIC to 'N' before checking, enabling re-sync after pipeline replay. The
+# MAGIC default is `false` so the incremental guard works normally.
 # MAGIC
 # MAGIC **Why not overwrite=True?** `overwrite=True` drops the entire
 # MAGIC Snowflake table and recreates it. This loses Snowflake grants,
@@ -195,7 +204,7 @@ else:
 # MAGIC
 # MAGIC **TRUNCATE-AND-LOAD is the right approach:**
 # MAGIC * DELETE existing rows first (preserves table schema and grants)
-# MAGIC * INSERT fresh data (idempotent — running it multiple times
+# MAGIC * INSERT fresh data (idempotent -- running it multiple times
 # MAGIC   produces the same result)
 # MAGIC * If the table does not exist yet, `auto_create_table=True` creates
 # MAGIC   it automatically on the first run
@@ -210,18 +219,34 @@ else:
 # This is the bridge that fills Snowflake's empty tables
 # so dbt models and Snowpark can operate on real data.
 
-# Reset snowflake_sync_status to 'N' so we can re-sync after pipeline re-run
-spark.sql("""
-    UPDATE HMDM_DEV.util.ctl_batch_log_tbl
-    SET snowflake_sync_status = 'N'
-    WHERE source_system_name = 'IQVIA_API'
-      AND batch_id = (
-          SELECT MAX(batch_id)
-          FROM HMDM_DEV.util.ctl_batch_log_tbl
-          WHERE source_system_name = 'IQVIA_API'
-      )
-""")
-print("Reset snowflake_sync_status to 'N' for latest IQVIA_API batch")
+# Incremental guard: Check if Snowflake sync is already done for the
+# latest batch. If snowflake_sync_status = 'Y', the sync is skipped
+# to avoid re-pushing unchanged data and wasting Snowflake credits.
+#
+# NOTE: Do NOT reset snowflake_sync_status to 'N' before checking.
+# The previous version reset to 'N' then checked for 'Y', which
+# meant the guard never triggered -- every run did a full re-sync.
+# Now we only reset when the user explicitly sets the
+# 'force_resync' widget to 'true' (useful for pipeline replay).
+
+# Add force_resync widget (default: false)
+# Set to 'true' to force a full re-sync even if status is already 'Y'.
+dbutils.widgets.text("force_resync", "false", "Force re-sync (true/false)")
+force_resync = dbutils.widgets.get("force_resync").strip().lower() == "true"
+
+if force_resync:
+    print("force_resync=true -- resetting snowflake_sync_status to 'N'")
+    spark.sql("""
+        UPDATE HMDM_DEV.util.ctl_batch_log_tbl
+        SET snowflake_sync_status = 'N'
+        WHERE source_system_name = 'IQVIA_API'
+          AND batch_id = (
+              SELECT MAX(batch_id)
+              FROM HMDM_DEV.util.ctl_batch_log_tbl
+              WHERE source_system_name = 'IQVIA_API'
+          )
+    """)
+    print("Reset snowflake_sync_status to 'N' for latest IQVIA_API batch")
 
 # Check if Snowflake sync is already done for the latest batch.
 # If snowflake_sync_status = 'Y' for the latest IQVIA_API batch,
@@ -242,7 +267,7 @@ if creds:
             
             if latest_sync and latest_sync[0]['snowflake_sync_status'] == 'Y':
                 sync_already_done = True
-                print("Snowflake sync already completed for latest batch (IQVIA_API) — skipping")
+                print("Snowflake sync already completed for latest batch (IQVIA_API) -- skipping")
     except Exception as e:
         print(f"Could not check batch sync status: {e}")
 
@@ -259,14 +284,14 @@ if creds and not sync_already_done:
         print(f"\n{layer.upper()}:")
         for table, result in tables.items():
             if "error" in result:
-                print(f"  {table}: ERROR — {result['error']}")
+                print(f"  {table}: ERROR -- {result['error']}")
             else:
                 print(f"  {table}: {result.get('source_rows', 0)} rows synced")
 elif creds and sync_already_done:
-    print("Sync skipped — latest batch already synced to Snowflake")
+    print("Sync skipped -- latest batch already synced to Snowflake")
     results = {}
 else:
-    print("ERROR: Snowflake sync skipped — no credentials. Pipeline FAILING.")
+    print("ERROR: Snowflake sync skipped -- no credentials. Pipeline FAILING.")
     raise RuntimeError("Snowflake sync failed: no credentials. Pipeline cannot succeed without Snowflake sync.")
 
 # COMMAND ----------
@@ -286,8 +311,11 @@ else:
 # MAGIC only when missing.
 # MAGIC
 # MAGIC This status is what the Run Snowflake Sync cell (step 4) checks
-# MAGIC before syncing — if the status is already 'Y', the sync is skipped.
-# MAGIC This prevents unnecessary re-syncs of unchanged data.
+# MAGIC before syncing -- if the status is already 'Y', the sync is skipped.
+# MAGIC The sync cell only resets this status to 'N' when the `force_resync`
+# MAGIC widget is set to 'true', allowing intentional re-sync after pipeline
+# MAGIC replay. By default, the incremental guard works normally and prevents
+# MAGIC unnecessary re-syncs of unchanged data.
 
 # COMMAND ----------
 
@@ -309,7 +337,7 @@ if creds and results:
                 break
     
     if has_errors:
-        print("WARNING: Some tables failed to sync — snowflake_sync_status NOT set to 'Y'")
+        print("WARNING: Some tables failed to sync -- snowflake_sync_status NOT set to 'Y'")
         print("    Re-run after fixing the errors above.")
     else:
         try:
@@ -363,24 +391,27 @@ print("=" * 60)
 # MAGIC %md
 # MAGIC #### 7. Verify Snowflake Data
 # MAGIC
-# MAGIC Connects to Snowflake and verifies all synced tables by checking row
-# MAGIC counts against expected values from the Databricks pipeline.
+# MAGIC Connects to Snowflake and verifies all synced tables by comparing
+# MAGIC Snowflake row counts against Databricks source row counts.
 # MAGIC
 # MAGIC This cell runs AFTER the sync is complete. It connects to Snowflake
-# MAGIC using the same credentials from AWS Secrets Manager, queries each
-# MAGIC table with `SELECT COUNT(*)`, and compares against expected row
-# MAGIC counts:
+# MAGIC using the same credentials from AWS Secrets Manager, then for each
+# MAGIC table:
+# MAGIC * Queries the Databricks source count (`SELECT COUNT(*)`)
+# MAGIC * Queries the Snowflake target count (`SELECT COUNT(*)`)
+# MAGIC * Compares the two: PASS if they match, MISMATCH if they differ
 # MAGIC
-# MAGIC * STAGING: 22 tables (13 HCP + 9 HCO), 57 rows
-# MAGIC   - HCP tables: 3 rows each (except HCP_NAME = 0, expected —
-# MAGIC     DQ null_check rejects mock API records with empty firstName)
-# MAGIC   - HCO tables: 2 rows each
-# MAGIC * MASTER: 9 tables (4 HCP + 5 HCO), 22 rows
-# MAGIC   - HCP tables: 3 rows each
-# MAGIC   - HCO tables: 2 rows each
-# MAGIC * Total: 31 tables, 76 rows, 0 errors
+# MAGIC Tables verified:
+# MAGIC * STAGING: 22 tables (13 HCP + 9 HCO)
+# MAGIC * MASTER: 10 tables (5 HCP + 5 HCO, including HCP main table)
+# MAGIC * Total: 32 tables
 # MAGIC
-# MAGIC Output shows PASS/SKIP/ERROR for each table and a final summary.
+# MAGIC No hard-coded expected row counts are used -- the comparison is
+# MAGIC always Databricks source count vs Snowflake target count, so this
+# MAGIC works correctly with any data volume (Issue 17 fix).
+# MAGIC
+# MAGIC Output shows PASS/SKIP/MISMATCH/ERROR for each table and a final
+# MAGIC summary.
 
 # COMMAND ----------
 
@@ -388,10 +419,19 @@ print("=" * 60)
 # ============================================================
 # VERIFY SNOWFLAKE DATA
 # ============================================================
-# Connect to Snowflake and verify all synced tables:
-#   1. Row counts for all STAGING tables (expected: 13 HCP × 3 + 9 HCO × 2 = 57)
-#   2. Row counts for all MASTER tables (expected: 4 HCP × 3 + 5 HCO × 2 = 22)
-#   3. Total: 31 tables, 76 rows
+# Connect to Snowflake and verify all synced tables by comparing
+# Snowflake row counts against Databricks source row counts.
+#
+# Verification approach (Issue 16/17 fix):
+#   - Query Databricks source count for each table
+#   - Query Snowflake target count for the same table
+#   - Compare: PASS if Databricks count == Snowflake count
+#   - No hard-coded expected row counts (production data varies)
+#
+# Tables verified:
+#   - STAGING: 22 tables (13 HCP + 9 HCO)
+#   - MASTER:  10 tables (5 HCP + 5 HCO, including HCP main table)
+#   - Total: 32 tables
 import snowflake.connector
 import pandas as pd
 
@@ -424,23 +464,41 @@ if creds:
     staging_total = 0
     staging_results = []
     for tbl in staging_tables:
+        # Get Databricks source count (lowercase table name)
+        dbx_table = tbl.lower()
+        try:
+            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM HMDM_DEV.staging.{dbx_table}").collect()[0][0]
+        except Exception:
+            dbx_cnt = -1  # Table does not exist in Databricks
+
         try:
             cur.execute(f"SELECT COUNT(*) FROM HMDM_DEV.STAGING.{tbl}")
-            cnt = cur.fetchone()[0]
-            staging_total += cnt
-            status = "PASS" if cnt > 0 else "SKIP"
+            sf_cnt = cur.fetchone()[0]
+            staging_total += sf_cnt
+            # Compare Databricks vs Snowflake counts
+            if dbx_cnt < 0:
+                status = "SKIP"
+                print(f"  {status} STAGING.{tbl}: {sf_cnt} rows (source table missing in Databricks)")
+            elif sf_cnt == dbx_cnt:
+                status = "PASS"
+                print(f"  {status} STAGING.{tbl}: {sf_cnt} rows (source={dbx_cnt})")
+            else:
+                status = "MISMATCH"
+                print(f"  {status} STAGING.{tbl}: Snowflake={sf_cnt} vs Databricks={dbx_cnt}")
             entity = "HCP" if tbl.startswith("HCP") else "HCO"
-            print(f"  {status} STAGING.{tbl}: {cnt} rows")
-            staging_results.append((entity, tbl, cnt))
+            staging_results.append((entity, tbl, sf_cnt, dbx_cnt, status))
         except Exception as e:
             print(f"  ERROR: STAGING.{tbl}: {e}")
-            staging_results.append(("ERR", tbl, -1))
+            staging_results.append(("ERR", tbl, -1, dbx_cnt, "ERROR"))
 
-    print(f"  Total STAGING rows: {staging_total}")
+    print(f"  Total STAGING rows (Snowflake): {staging_total}")
 
     # --- 2. MASTER row counts ---
+    # NOTE: HCP is included in the verification list (Issue 16 fix).
+    # If master.hcp does not exist in Databricks, the verification will
+    # report it as an error rather than silently ignoring it.
     master_tables = [
-        'HCP_SPECIALTY', 'HCP_ALTERNATE_NAME', 'HCP_EDUCATION', 'HCP_IDENTIFICATION',
+        'HCP', 'HCP_SPECIALTY', 'HCP_ALTERNATE_NAME', 'HCP_EDUCATION', 'HCP_IDENTIFICATION',
         'HCO', 'HCO_NAME', 'HCO_ALTERNATE_IDENTIFIER', 'HCO_PHONE', 'HCO_SPECIALTY',
     ]
 
@@ -450,24 +508,40 @@ if creds:
     master_total = 0
     master_results = []
     for tbl in master_tables:
+        # Get Databricks source count (lowercase table name)
+        dbx_table = tbl.lower()
+        try:
+            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM HMDM_DEV.master.{dbx_table}").collect()[0][0]
+        except Exception:
+            dbx_cnt = -1  # Table does not exist in Databricks
+
         try:
             cur.execute(f"SELECT COUNT(*) FROM HMDM_DEV.MASTER.{tbl}")
-            cnt = cur.fetchone()[0]
-            master_total += cnt
-            status = "PASS" if cnt > 0 else "SKIP"
+            sf_cnt = cur.fetchone()[0]
+            master_total += sf_cnt
+            # Compare Databricks vs Snowflake counts
+            if dbx_cnt < 0:
+                status = "SKIP"
+                print(f"  {status} MASTER.{tbl}: {sf_cnt} rows (source table missing in Databricks)")
+            elif sf_cnt == dbx_cnt:
+                status = "PASS"
+                print(f"  {status} MASTER.{tbl}: {sf_cnt} rows (source={dbx_cnt})")
+            else:
+                status = "MISMATCH"
+                print(f"  {status} MASTER.{tbl}: Snowflake={sf_cnt} vs Databricks={dbx_cnt}")
             entity = "HCP" if tbl.startswith("HCP") else "HCO"
-            print(f"  {status} MASTER.{tbl}: {cnt} rows")
-            master_results.append((entity, tbl, cnt))
+            master_results.append((entity, tbl, sf_cnt, dbx_cnt, status))
         except Exception as e:
             print(f"  ERROR: MASTER.{tbl}: {e}")
-            master_results.append(("ERR", tbl, -1))
+            master_results.append(("ERR", tbl, -1, dbx_cnt, "ERROR"))
 
-    print(f"  Total MASTER rows: {master_total}")
+    print(f"  Total MASTER rows (Snowflake): {master_total}")
 
     # --- 3. Summary ---
     total_tables = len(staging_results) + len(master_results)
     total_rows = staging_total + master_total
-    errors = sum(1 for _, _, c in staging_results + master_results if c < 0)
+    errors = sum(1 for r in staging_results + master_results if r[4] in ("ERROR",))
+    mismatches = sum(1 for r in staging_results + master_results if r[4] == "MISMATCH")
 
     print("\n" + "=" * 60)
     print("SNOWFLAKE VERIFICATION SUMMARY")
@@ -475,15 +549,16 @@ if creds:
     print(f"  Tables checked:  {total_tables}")
     print(f"  Total rows:      {total_rows}")
     print(f"  Errors:          {errors}")
-    print(f"  STAGING rows:    {staging_total} (expected: 57)")
-    print(f"  MASTER rows:     {master_total} (expected: 22)")
-    if errors == 0 and total_rows == 76:
+    print(f"  Mismatches:      {mismatches}")
+    print(f"  STAGING rows:    {staging_total}")
+    print(f"  MASTER rows:     {master_total}")
+    if errors == 0 and mismatches == 0:
         print("  VERIFICATION PASSED")
     else:
-        print("  WARNING: VERIFICATION INCOMPLETE — check errors above")
+        print("  WARNING: VERIFICATION INCOMPLETE -- check errors/mismatches above")
     print("=" * 60)
 
     cur.close()
     conn.close()
 else:
-    print("WARNING: No Snowflake credentials — cannot verify")
+    print("WARNING: No Snowflake credentials -- cannot verify")

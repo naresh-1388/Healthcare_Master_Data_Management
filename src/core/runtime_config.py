@@ -57,7 +57,7 @@ email_config = {
     "smtp_port": int(os.getenv("HEALTHCARE_MDM_SMTP_PORT", "587")),
 }
 
-# SMTP password is stored in Databricks secrets — never in env vars or code.
+# SMTP password is stored in Databricks secrets -- never in env vars or code.
 # Secret scope "healthcare_mdm"  key "smtp_password"
 # To set it up:
 #   databricks secrets create-scope healthcare_mdm
@@ -671,7 +671,7 @@ def write_s3_timestamp(source_system_name, start_timestamp=None, end_timestamp=N
     Args:
         source_system_name: The source system (e.g. "IQVIA_API").
         start_timestamp: Batch start timestamp.  If None, uses
-            "1900-01-01 00:00:00" (full-load sentinel — every record
+            "1900-01-01 00:00:00" (full-load sentinel -- every record
             satisfies > 1900).
         end_timestamp: Batch end timestamp.  If None, uses current
             timestamp.

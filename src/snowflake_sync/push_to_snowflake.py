@@ -1,5 +1,5 @@
 """
-Snowflake Sync Module — bridges Databricks Delta tables to Snowflake.
+Snowflake Sync Module -- bridges Databricks Delta tables to Snowflake.
 
 This module reads Databricks Unity Catalog tables (staging, master)
 and writes them to Snowflake, so that dbt models and Snowpark scripts
@@ -42,7 +42,7 @@ except ImportError:
 
 
 # ============================================================
-# Table Mapping: Databricks → Snowflake
+# Table Mapping: Databricks -> Snowflake
 # ============================================================
 # Each entry maps a Databricks table to its Snowflake equivalent.
 # Databricks uses lowercase snake_case; Snowflake uses UPPERCASE.
@@ -70,6 +70,10 @@ STAGING_TABLE_MAP: Dict[str, str] = {
     "hco_phone": "HCO_PHONE",
     "hco_email": "HCO_EMAIL",
     "hco_tax": "HCO_TAX",
+    # NOTE: The Databricks staging table is named hco_hco_hierarchy (double
+    # hco_ prefix, representing HCO-to-HCO hierarchy). The Snowflake target
+    # is HCO_HIERARCHY. This naming is intentional and matches the DQ rules
+    # which also use hco_hco_hierarchy as the source_table.
     "hco_hco_hierarchy": "HCO_HIERARCHY",
 }
 
@@ -147,7 +151,7 @@ def get_snowflake_credentials() -> Optional[Dict[str, str]]:
         return creds
 
     except Exception as e:
-        print(f"Snowflake credentials: FAILED — {e}")
+        print(f"Snowflake credentials: FAILED -- {e}")
         print("  Check AWS Secrets Manager secret 'healthcare-mdm/dev/api-snowflake'")
         print("  and Databricks service credential 'healthcare_mdm_secrets_credential'.")
         return None
@@ -237,7 +241,7 @@ def _sync_one_table(
       3. DELETE all existing rows from the Snowflake table
          (TRUNCATE is faster but cannot be rolled back; DELETE is safer)
       4. INSERT the fresh data using write_pandas in append mode
-         (overwrite=False — we already cleared existing rows)
+         (overwrite=False -- we already cleared existing rows)
 
     Why TRUNCATE-AND-LOAD instead of overwrite=True or append:
       - overwrite=True drops the entire table and recreates it. This
@@ -257,19 +261,27 @@ def _sync_one_table(
 
     _spark = _get_spark()
 
+    # Build fully qualified Snowflake table name EARLY so it is available
+    # in the zero-row block below (previously sf_full was defined after
+    # the zero-row check, causing a NameError that was silently swallowed).
+    sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
+
     # Read Databricks table
     df = _spark.sql(f"SELECT * FROM {dbx_table}")
     row_count = df.count()
 
     if row_count == 0:
-        # Source has 0 rows - TRUNCATE the Snowflake target so it stays in sync.
+        # Source has 0 rows - clear the Snowflake target so it stays in sync.
         # Do NOT skip: leaving stale data makes Snowflake inconsistent with Databricks.
-        print(f"  {dbx_table} → {sf_schema}.{sf_table}: 0 rows (clearing target)")
+        print(f"  {dbx_table} -> {sf_full}: 0 rows (clearing target)")
         try:
             conn.cursor().execute(f"DELETE FROM {sf_full}")
             conn.commit()
-        except Exception:
-            pass
+            print(f"    Target cleared: {sf_full}")
+        except Exception as clear_err:
+            # Do NOT silently swallow delete failure -- log it so the operator
+            # knows the Snowflake target may contain stale data.
+            print(f"    WARNING: Could not clear {sf_full}: {clear_err}")
         return {"source_rows": 0, "deleted_rows": 0, "inserted_rows": 0}
 
     # Cast complex types (map, struct, array) to string for safe pandas
@@ -279,14 +291,14 @@ def _sync_one_table(
     for field in df.schema.fields:
         if isinstance(field.dataType, (MapType, StructType, ArrayType)):
             df = df.withColumn(field.name, df[field.name].cast("string"))
-            print(f"    [type-cast] {field.name}: {field.dataType.simpleString()} → string")
+            print(f"    [type-cast] {field.name}: {field.dataType.simpleString()} -> string")
 
     # Collect data as pandas DataFrame for write_pandas bulk insert.
     #
     # Two strategies based on row count:
-    #   - Small data (<10k rows): df.collect() + row.asDict() — avoids
+    #   - Small data (<10k rows): df.collect() + row.asDict() -- avoids
     #     Spark Connect PlanMetrics serialization bug in toPandas().
-    #   - Large data (>=10k rows): df.toPandas() — faster, but may hit
+    #   - Large data (>=10k rows): df.toPandas() -- faster, but may hit
     #     the PlanMetrics bug on Serverless. If it fails, falls back
     #     to collect() in chunks.
     import pandas as _pd
@@ -309,13 +321,12 @@ def _sync_one_table(
             data_list = [row.asDict() for row in spark_rows]
             pdf = _pd.DataFrame(data_list)
 
-    # Build fully qualified Snowflake table name
-    sf_full = f"{sf_database}.{sf_schema}.{sf_table}"
+    # NOTE: sf_full is already defined above (before the zero-row block).
     cur = conn.cursor()
     deleted_rows = 0
 
     # Attempt 1: TRUNCATE-AND-LOAD (DELETE + INSERT with transaction safety)
-    # This is the preferred path — preserves Snowflake grants, policies, tags.
+    # This is the preferred path -- preserves Snowflake grants, policies, tags.
     try:
         # Disable autocommit so DELETE + INSERT run inside a single transaction.
         # If INSERT fails, ROLLBACK restores the old rows.
@@ -327,7 +338,7 @@ def _sync_one_table(
             deleted_rows = cur.rowcount if cur.rowcount is not None else 0
         except Exception as del_err:
             if "does not exist" in str(del_err).lower() or "object does not exist" in str(del_err).lower():
-                pass  # Table does not exist yet — write_pandas will auto-create it
+                pass  # Table does not exist yet -- write_pandas will auto-create it
             else:
                 raise
 
@@ -343,11 +354,11 @@ def _sync_one_table(
 
         conn.commit()
 
-        print(f"  {dbx_table} → {sf_full}: {row_count} rows (deleted={deleted_rows}, inserted={nrows})")
+        print(f"  {dbx_table} -> {sf_full}: {row_count} rows (deleted={deleted_rows}, inserted={nrows})")
         return {"source_rows": row_count, "deleted_rows": deleted_rows, "inserted_rows": nrows}
 
     except Exception as first_err:
-        # Rollback the failed transaction — restores old data if DELETE succeeded.
+        # Rollback the failed transaction -- restores old data if DELETE succeeded.
         try:
             conn.rollback()
         except Exception:
@@ -370,8 +381,8 @@ def _sync_one_table(
             )
 
             if not success:
-                raise RuntimeError(f"write_pandas (overwrite fallback) returned success=False for {dbx_table} → {sf_full}")
-            print(f"  {dbx_table} → {sf_full}: {row_count} rows (recreated, inserted={nrows})")
+                raise RuntimeError(f"write_pandas (overwrite fallback) returned success=False for {dbx_table} -> {sf_full}")
+            print(f"  {dbx_table} -> {sf_full}: {row_count} rows (recreated, inserted={nrows})")
             return {"source_rows": row_count, "deleted_rows": 0, "inserted_rows": nrows}
         else:
             raise
@@ -398,25 +409,30 @@ def sync_staging_to_snowflake(
         sf_schema: Snowflake schema name (STAGING).
 
     Returns:
-        Dict mapping table name → sync result.
+        Dict mapping table name -> sync result.
     """
     creds = get_snowflake_credentials()
     if creds is None:
-        print("ERROR: Cannot sync — Snowflake credentials not configured.")
+        print("ERROR: Cannot sync -- Snowflake credentials not configured.")
         return {}
 
     conn = create_snowflake_connection(creds)
     results = {}
 
     print(f"\n{'=' * 60}")
-    print(f"SNOWFLAKE SYNC: {catalog}.staging → {sf_database}.{sf_schema}")
+    print(f"SNOWFLAKE SYNC: {catalog}.staging -> {sf_database}.{sf_schema}")
     print(f"{'=' * 60}")
 
     for dbx_table_name, sf_table_name in STAGING_TABLE_MAP.items():
         dbx_full = f"{catalog}.staging.{dbx_table_name}"
 
         if not _table_exists_in_databricks(dbx_full):
-            print(f"  SKIP: {dbx_full} does not exist in Databricks")
+            # Do NOT silently skip -- record as an error so the batch is not
+            # marked as successfully synced when a table is missing.
+            print(f"  ERROR: {dbx_full} does not exist in Databricks")
+            results[dbx_table_name] = {
+                "error": f"Expected Databricks table does not exist: {dbx_full}"
+            }
             continue
 
         try:
@@ -425,7 +441,7 @@ def sync_staging_to_snowflake(
             )
             results[dbx_table_name] = result
         except Exception as e:
-            print(f"  ERROR: {dbx_full} → {sf_schema}.{sf_table_name}: {e}")
+            print(f"  ERROR: {dbx_full} -> {sf_schema}.{sf_table_name}: {e}")
             results[dbx_table_name] = {"error": str(e)}
 
     conn.close()
@@ -449,25 +465,30 @@ def sync_master_to_snowflake(
         sf_schema: Snowflake schema name (MASTER).
 
     Returns:
-        Dict mapping table name → sync result.
+        Dict mapping table name -> sync result.
     """
     creds = get_snowflake_credentials()
     if creds is None:
-        print("ERROR: Cannot sync — Snowflake credentials not configured.")
+        print("ERROR: Cannot sync -- Snowflake credentials not configured.")
         return {}
 
     conn = create_snowflake_connection(creds)
     results = {}
 
     print(f"\n{'=' * 60}")
-    print(f"SNOWFLAKE SYNC: {catalog}.master → {sf_database}.{sf_schema}")
+    print(f"SNOWFLAKE SYNC: {catalog}.master -> {sf_database}.{sf_schema}")
     print(f"{'=' * 60}")
 
     for dbx_table_name, sf_table_name in MASTER_TABLE_MAP.items():
         dbx_full = f"{catalog}.master.{dbx_table_name}"
 
         if not _table_exists_in_databricks(dbx_full):
-            print(f"  SKIP: {dbx_full} does not exist in Databricks")
+            # Do NOT silently skip -- record as an error so the batch is not
+            # marked as successfully synced when a table is missing.
+            print(f"  ERROR: {dbx_full} does not exist in Databricks")
+            results[dbx_table_name] = {
+                "error": f"Expected Databricks table does not exist: {dbx_full}"
+            }
             continue
 
         try:
@@ -476,7 +497,7 @@ def sync_master_to_snowflake(
             )
             results[dbx_table_name] = result
         except Exception as e:
-            print(f"  ERROR: {dbx_full} → {sf_schema}.{sf_table_name}: {e}")
+            print(f"  ERROR: {dbx_full} -> {sf_schema}.{sf_table_name}: {e}")
             results[dbx_table_name] = {"error": str(e)}
 
     conn.close()
@@ -489,7 +510,7 @@ def run_snowflake_sync(
     sync_master: bool = True,
 ) -> Dict[str, Dict]:
     """
-    Main entry point — sync Databricks tables to Snowflake.
+    Main entry point -- sync Databricks tables to Snowflake.
 
     Called by notebook 10_Snowflake_Sync after Egress (Stage 6)
     completes, so Snowflake has fresh data for dbt and Snowpark.

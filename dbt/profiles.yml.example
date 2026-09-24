@@ -1,0 +1,35 @@
+# ============================================================
+# dbt profiles.yml example for Healthcare MDM
+#
+# Copy this file to profiles.yml and set the environment variables
+# before running dbt. The actual profiles.yml uses the same env_var
+# pattern -- no credentials are stored in Git.
+#
+# Required environment variables (set by run_dbt.sh from AWS Secrets
+# Manager, or set manually for local development):
+#   SNOWFLAKE_ACCOUNT   - Snowflake account identifier (without .snowflakecomputing.com)
+#   SNOWFLAKE_USER      - Snowflake user name
+#   SNOWFLAKE_PASSWORD  - Snowflake password
+#   SNOWFLAKE_ROLE      - Snowflake role (default: HMDM_DEV_ROLE)
+#   SNOWFLAKE_DATABASE  - Snowflake database (default: HMDM_DEV)
+#   SNOWFLAKE_WAREHOUSE - Snowflake warehouse (default: HMDM_WH)
+#   SNOWFLAKE_SCHEMA    - Default schema (default: STAGING)
+#
+# SECURITY: Never commit real Snowflake credentials to Git.
+#           The actual profiles.yml uses env_var() for all sensitive fields.
+#           If you previously committed credentials, rotate them immediately.
+# ============================================================
+
+healthcare_mdm:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'HMDM_DEV_ROLE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'HMDM_DEV') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'HMDM_WH') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'STAGING') }}"
+      threads: 4

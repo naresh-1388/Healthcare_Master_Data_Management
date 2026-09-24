@@ -14,8 +14,9 @@
 ==
 == NOTE: If your dbt profile uses a different database than HMDM_DEV,
 ==   replace HMDM_DEV with your dbt target database name in all queries below.
-==   The dbt run logs show the exact schema names used (e.g., STAGING_staging,
-==   STAGING_mdm). Check Section 1 first to confirm the correct schema names.
+==   The custom generate_schema_name macro (dbt/macros/get_custom_schema.sql)
+==   ensures dbt creates objects in HMDM_DEV.STAGING and HMDM_DEV.MDM schemas
+==   (not STAGING_staging or STAGING_mdm). Check Section 1 first to confirm.
 ==
 == Instructions: Run section by section in a Snowflake worksheet.
 ===============================================================================
@@ -30,8 +31,9 @@
 -------------------------------------------------------------------------------
 
 -- 1A. List ALL schemas in HMDM_DEV (find the dbt-created schemas)
---     dbt creates schemas like STAGING and MDM
---     (target schema 'STAGING' + custom schema '_staging' or '_mdm')
+--     The custom generate_schema_name macro ensures dbt creates schemas
+--     named exactly 'STAGING' and 'MDM' (not concatenated like
+--     'STAGING_staging' or 'STAGING_mdm').
 SHOW SCHEMAS IN DATABASE HMDM_DEV;
 
 -- 1B. List ALL views in the dbt staging schema (expected: 23 views)
@@ -113,7 +115,7 @@ ORDER BY table_name;
 --
 -- Purpose: Check row counts in all 23 dbt staging views. These should match
 --   the source STAGING table row counts (views are passthrough with column
---   extraction only — no filtering, no joins).
+--   extraction only -- no filtering, no joins).
 --
 -- Expected pattern:
 --   stg_HCP_NAME = 0 rows (source HCP_NAME has 0 rows due to DQ)
@@ -190,7 +192,7 @@ ORDER BY entity, view_name;
 -------------------------------------------------------------------------------
 
 -- 3A. Check Source_FK column exists in ALL 23 staging views
---     This is THE most critical column — it is the join key for mdm_hcp and mdm_hco
+--     This is THE most critical column -- it is the join key for mdm_hcp and mdm_hco
 --     If any view is missing Source_FK, the marts LEFT JOIN will produce NULLs
 SELECT 
     TABLE_NAME AS view_name,
@@ -636,7 +638,7 @@ SELECT 'stg_HCO_ADDRESS -> mdm_hco',
         ELSE 'OK'
     END;
 
--- 9C. Compare mdm_* vs master_* row counts (should be EQUAL — master is passthrough rename)
+-- 9C. Compare mdm_* vs master_* row counts (should be EQUAL -- master is passthrough rename)
 SELECT 
     'mdm_hcp vs master_hcp' AS comparison,
     (SELECT COUNT(*) FROM HMDM_DEV.MDM.mdm_hcp) AS mdm_rows,
@@ -689,7 +691,7 @@ LIMIT 20;
 -- SECTION 11: dbt TESTS READINESS CHECK
 --
 -- Purpose: Verify the dbt test schema (schema.yml) is properly configured.
---   This is a metadata check — it validates that tests are defined in the
+--   This is a metadata check -- it validates that tests are defined in the
 --   dbt project, not that they pass. Run 'dbt test --target dev' from CLI
 --   to actually execute the tests.
 --
@@ -714,7 +716,7 @@ LIMIT 20;
 -- 11E. Run dbt source freshness (check if source data is stale):
 --   dbt source freshness --target dev
 
--- 11F. Run dbt compile only (generate SQL without executing — for debugging):
+-- 11F. Run dbt compile only (generate SQL without executing -- for debugging):
 --   dbt compile --target dev
 
 -- 11G. Run dbt run with specific models only (for debugging):
@@ -804,5 +806,5 @@ ORDER BY row_count DESC;
 --   
 -- If any schema name does not match (e.g., STAGING vs staging),
 --   check Section 1A output and adjust the schema names accordingly.
---   Snowflake schema names are case-sensitive — use exact names from SHOW SCHEMAS.
+--   Snowflake schema names are case-sensitive -- use exact names from SHOW SCHEMAS.
 -------------------------------------------------------------------------------

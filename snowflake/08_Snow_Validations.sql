@@ -26,7 +26,7 @@
 -- SECTION 1: SCHEMA EXISTENCE AND OBJECT INVENTORY
 --
 -- Purpose: Confirm all expected schemas exist and contain the right number
---   of tables. This is the first check — if schemas or tables are missing,
+--   of tables. This is the first check -- if schemas or tables are missing,
 --   the sync (push_to_snowflake.py) may not have run or may have failed.
 -------------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@
 --     If STAGING or MASTER is missing, the Snowflake DDL scripts did not run
 SHOW SCHEMAS IN DATABASE HMDM_DEV;
 
--- 1B. Count objects in each schema — quick health check
+-- 1B. Count objects in each schema -- quick health check
 --     This gives a single-row overview of how many tables exist per schema
 SELECT 
     SCHEMA_NAME,
@@ -52,7 +52,7 @@ SHOW TABLES IN SCHEMA HMDM_DEV.STAGING;
 
 -- 1D. List ALL tables in MASTER schema (should be 9: 4 HCP + 5 HCO)
 --     These are DDL placeholder tables for the Informatica MDM hub
---     They should be empty (0 rows) — populated by MDM, not by sync
+--     They should be empty (0 rows) -- populated by MDM, not by sync
 SHOW TABLES IN SCHEMA HMDM_DEV.MASTER;
 
 -- 1E. List ALL tables in MDM schema (mdm_hub tables for Informatica)
@@ -207,7 +207,7 @@ ORDER BY entity_group;
 
 -- 3A. Describe a few key STAGING tables to verify column structure
 --     All tables should have generic columns + response_json
---     response_json is the key column — it contains the stringified JSON
+--     response_json is the key column -- it contains the stringified JSON
 --     that dbt staging views will PARSE_JSON to extract attributes
 DESCRIBE TABLE HMDM_DEV.STAGING.HCP_ADDRESS;
 DESCRIBE TABLE HMDM_DEV.STAGING.HCP_NAME;
@@ -216,7 +216,7 @@ DESCRIBE TABLE HMDM_DEV.STAGING.HCO_ADDRESS;
 DESCRIBE TABLE HMDM_DEV.STAGING.HCO_NAME;
 
 -- 3B. Check if response_json column exists in all STAGING tables
---     This is the most critical column — without it, dbt staging views
+--     This is the most critical column -- without it, dbt staging views
 --     cannot extract any attributes from the API data
 SELECT 
     TABLE_NAME,
@@ -267,7 +267,7 @@ GROUP BY TABLE_NAME
 ORDER BY TABLE_NAME;
 
 -- 3F. Describe MASTER tables (should have MDM-specific columns)
---     These are NOT generic — they have columns like sourcePKey, firstName,
+--     These are NOT generic -- they have columns like sourcePKey, firstName,
 --     X_informatica_Specialty, etc. matching the Informatica MDM schema
 DESCRIBE TABLE HMDM_DEV.MASTER.HCO;
 DESCRIBE TABLE HMDM_DEV.MASTER.HCP_SPECIALTY;
@@ -379,7 +379,7 @@ FROM HMDM_DEV.STAGING.HCP_PHONE
 ORDER BY table_name;
 
 -- 4G. Extract specific fields from response_json to verify content
---     This mimics what dbt staging views do — extract attributes from JSON
+--     This mimics what dbt staging views do -- extract attributes from JSON
 --     If these return values, the JSON structure is correct for dbt to parse
 SELECT 
     iqvia_id,
@@ -442,7 +442,7 @@ LIMIT 10;
 
 -- 5E. Cross-table batch consistency check
 --     Verify the same batch_ids appear across multiple HCP tables
---     (they should — all HCP tables are loaded from the same API batches)
+--     (they should -- all HCP tables are loaded from the same API batches)
 SELECT 
     'HCP_ADDRESS' AS tbl, 
     COLLECT_SET(batch_id) AS batch_ids
@@ -477,7 +477,7 @@ ORDER BY duplicate_count DESC
 LIMIT 10;
 
 -- 6B. Check for full-row duplicates (all columns identical)
---     This should return 0 rows — TRUNCATE-AND-LOAD prevents duplicates
+--     This should return 0 rows -- TRUNCATE-AND-LOAD prevents duplicates
 SELECT 
     'HCP_SPECIALTY' AS table_name,
     COUNT(*) - COUNT(DISTINCT iqvia_id) AS possible_duplicates
@@ -498,13 +498,14 @@ LIMIT 10;
 -------------------------------------------------------------------------------
 -- SECTION 7: MASTER TABLE VALIDATIONS (DDL PLACEHOLDER TABLES)
 --
--- Purpose: Verify the 9 MASTER tables exist with correct schemas but are empty.
+-- Purpose: Verify the MASTER tables exist with correct schemas but are empty.
 --   These tables are created by Snowflake DDL file 06_create_master_tables.sql.
---   They are NOT populated by the Databricks sync — they are filled by
---   Informatica MDM export or by the Snowpark snapshot script.
+--   The sync map has 10 entries (5 HCP + 5 HCO); master.hcp may not exist
+--   in Databricks yet. They are NOT populated by the Databricks sync -- they
+--   are filled by Informatica MDM export or by the Snowpark snapshot script.
 -------------------------------------------------------------------------------
 
--- 7A. Row counts for ALL 9 MASTER tables (expected: ALL ZERO)
+-- 7A. Row counts for ALL MASTER tables (sync map has 10; expected: ALL ZERO)
 SELECT 'HCP_SPECIALTY'              AS table_name, COUNT(*) AS row_count FROM HMDM_DEV.MASTER.HCP_SPECIALTY
 UNION ALL SELECT 'HCP_ALTERNATE_NAME',      COUNT(*) FROM HMDM_DEV.MASTER.HCP_ALTERNATE_NAME
 UNION ALL SELECT 'HCP_EDUCATION',           COUNT(*) FROM HMDM_DEV.MASTER.HCP_EDUCATION
@@ -530,7 +531,7 @@ WHERE TABLE_SCHEMA = 'MASTER'
   AND TABLE_NAME = 'HCO'
 ORDER BY ORDINAL_POSITION;
 
--- 7C. Sample data (expected: empty — 0 rows)
+-- 7C. Sample data (expected: empty -- 0 rows)
 SELECT * FROM HMDM_DEV.MASTER.HCO LIMIT 5;
 SELECT * FROM HMDM_DEV.MASTER.HCP_SPECIALTY LIMIT 5;
 
@@ -546,7 +547,7 @@ SELECT GET_DDL('TABLE', 'HMDM_DEV.MASTER.HCP_SPECIALTY');
 --   These are created by Snowflake DDL file 05_create_mdm_tables.sql.
 --   dbt HCP child master models (master_hcp_specialty, master_hcp_alternate_name,
 --   master_hcp_license, master_hcp_therapeutic_area) read from these as a source.
---   Expected: ALL ZERO rows — populated by Informatica MDM engine, not by sync.
+--   Expected: ALL ZERO rows -- populated by Informatica MDM engine, not by sync.
 -------------------------------------------------------------------------------
 
 -- 8A. Row counts for ALL MDM hub tables
@@ -576,7 +577,7 @@ DESCRIBE TABLE HMDM_DEV.MDM.hcp_therapeutic_area;
 --   actual tables in Snowflake.
 -------------------------------------------------------------------------------
 
--- 9A. Expected STAGING tables (22 total) — check each one exists
+-- 9A. Expected STAGING tables (22 total) -- check each one exists
 SELECT 
     'HCP_ADDRESS' AS expected_table,
     CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='STAGING' AND TABLE_NAME='HCP_ADDRESS' AND TABLE_CATALOG='HMDM_DEV') THEN 'EXISTS' ELSE 'MISSING' END AS status
@@ -604,7 +605,7 @@ UNION ALL SELECT 'HCO_SPECIALTY', CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SC
 UNION ALL SELECT 'HCO_TAX', CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='STAGING' AND TABLE_NAME='HCO_TAX' AND TABLE_CATALOG='HMDM_DEV') THEN 'EXISTS' ELSE 'MISSING' END
 ORDER BY expected_table;
 
--- 9B. Expected MASTER tables (9 total) — check each one exists
+-- 9B. Expected MASTER tables (9 total) -- check each one exists
 SELECT 
     'HCP_SPECIALTY' AS expected_table,
     CASE WHEN EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='MASTER' AND TABLE_NAME='HCP_SPECIALTY' AND TABLE_CATALOG='HMDM_DEV') THEN 'EXISTS' ELSE 'MISSING' END AS status
@@ -684,7 +685,7 @@ ORDER BY TABLE_SCHEMA, TABLE_NAME;
 -- END OF 08_SNOW_VALIDATIONS
 -- 
 -- Summary of what to look for:
---   Section 1:  All schemas and tables exist (22 STAGING + 9 MASTER + MDM hub)
+--   Section 1:  All schemas and tables exist (22 STAGING + 10 MASTER sync map + MDM hub)
 --   Section 2:  Row counts match Databricks (HCP tables have mock data, HCP_NAME=0)
 --   Section 3:  All STAGING tables have generic columns + response_json
 --   Section 4:  response_json is valid JSON, no NULLs in key columns

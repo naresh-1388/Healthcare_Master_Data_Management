@@ -44,10 +44,22 @@ Resources:
   # needed if you deploy the mock API itself to Lambda too - if it still
   # runs on your laptop via `uvicorn`, api/store.py automatically falls
   # back to an in-memory dict and this table is simply unused.
+  #
+  # NOTE: This DynamoDB table belongs to the MOCK API infrastructure,
+  # separate from the real download_api Lambda. If you deploy the mock
+  # API, this table stores mock HCP/HCO records. If you only deploy the
+  # real download_api Lambda, this table is unused and can be removed.
   MockApiTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: healthcare-mdm-mock-api
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: entityId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: entityId
+          KeyType: HASH
 
   MockMdmHubTable:
     Type: AWS::DynamoDB::Table
@@ -59,13 +71,6 @@ Resources:
           AttributeType: S
       KeySchema:
         - AttributeName: entityId
-          KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: pk
-          AttributeType: S
-      KeySchema:
-        - AttributeName: pk
           KeyType: HASH
 
   DownloadApiFunction:

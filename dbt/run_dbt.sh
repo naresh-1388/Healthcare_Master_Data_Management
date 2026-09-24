@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# dbt runner — fetches Snowflake credentials from AWS Secrets
+# dbt runner -- fetches Snowflake credentials from AWS Secrets
 # Manager, exports as env vars, then runs dbt.
 #
 # No credentials are hardcoded. The same AWS Secrets Manager
@@ -14,9 +14,13 @@
 #   ./run_dbt.sh dbt docs generate --profiles-dir .
 #
 # Prerequisites:
-#   - AWS CLI configured with access to Secrets Manager
-#   - jq installed (for JSON parsing)
 #   - dbt installed (pip install dbt-snowflake)
+#     NOTE: The full pipeline notebook (09_Run_Full_Pipeline.py Stage 8)
+#     installs dbt-snowflake automatically if it is not already present.
+#   - AWS CLI configured with access to Secrets Manager
+#     OR running inside Databricks (uses boto3 + service credential)
+#   - jq installed (for JSON parsing)
+#     OR Python 3 (fallback when jq is not available)
 #   - Databricks service credential 'healthcare_mdm_secrets_credential'
 #     OR AWS credentials with secretsmanager:GetSecretValue
 # ============================================================
@@ -35,7 +39,7 @@ if command -v aws &>/dev/null; then
         --query SecretString \
         --output text)
 elif [ -n "${DATABRICKS_TOKEN:-}" ]; then
-    # Running inside Databricks — use boto3 via Python
+    # Running inside Databricks -- use boto3 via Python
     SECRET_JSON=$(python3 -c "
 import boto3, json
 from pyspark.dbutils import DBUtils
@@ -59,12 +63,28 @@ else
 fi
 
 # ---- Parse and export as environment variables ----
-export SNOWFLAKE_ACCOUNT=$(echo "$SECRET_JSON" | jq -r '.snowflake_account' | sed 's/\.snowflakecomputing\.com//')
-export SNOWFLAKE_USER=$(echo "$SECRET_JSON" | jq -r '.snowflake_user')
-export SNOWFLAKE_PASSWORD=$(echo "$SECRET_JSON" | jq -r '.snowflake_password')
-export SNOWFLAKE_WAREHOUSE=$(echo "$SECRET_JSON" | jq -r '.snowflake_warehouse')
-export SNOWFLAKE_DATABASE=$(echo "$SECRET_JSON" | jq -r '.snowflake_database')
-export SNOWFLAKE_SCHEMA=$(echo "$SECRET_JSON" | jq -r '.snowflake_schema')
+# Use jq if available; fall back to Python (jq is not guaranteed on
+# Databricks Serverless compute).
+if command -v jq &>/dev/null; then
+    export SNOWFLAKE_ACCOUNT=$(echo "$SECRET_JSON" | jq -r '.snowflake_account' | sed 's/\.snowflakecomputing\.com//')
+    export SNOWFLAKE_USER=$(echo "$SECRET_JSON" | jq -r '.snowflake_user')
+    export SNOWFLAKE_PASSWORD=$(echo "$SECRET_JSON" | jq -r '.snowflake_password')
+    export SNOWFLAKE_WAREHOUSE=$(echo "$SECRET_JSON" | jq -r '.snowflake_warehouse')
+    export SNOWFLAKE_DATABASE=$(echo "$SECRET_JSON" | jq -r '.snowflake_database')
+    export SNOWFLAKE_SCHEMA=$(echo "$SECRET_JSON" | jq -r '.snowflake_schema')
+else
+    echo "jq not found -- using Python for JSON parsing"
+    eval "$(echo "$SECRET_JSON" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+account = d.get('snowflake_account', '').replace('.snowflakecomputing.com', '')
+for key in ['account', 'user', 'password', 'warehouse', 'database', 'schema']:
+    val = d.get(f'snowflake_{key}', '')
+    if key == 'account':
+        val = account
+    print(f\"export SNOWFLAKE_{key.upper()}='{val}'\")
+")"
+fi
 export SNOWFLAKE_ROLE="${SNOWFLAKE_ROLE:-HMDM_DEV_ROLE}"
 
 echo "Credentials loaded: account=$SNOWFLAKE_ACCOUNT warehouse=$SNOWFLAKE_WAREHOUSE"

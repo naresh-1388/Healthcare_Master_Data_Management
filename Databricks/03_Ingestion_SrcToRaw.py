@@ -23,20 +23,20 @@
 # MAGIC Select the source system and entity type from the widget panel at the top of the notebook before running ingestion. The next cell creates these widgets and filters the source identifiers based on the entity type selection.
 # MAGIC
 # MAGIC * **Source System**: IQVIA_API (production pipeline)
-# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which source identifiers are processed
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH -- controls which source identifiers are processed
 
 # COMMAND ----------
 
 # DBTITLE 1,Widget Setup
 # ============================================================
-# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# WIDGET SETUP -- SOURCE SYSTEM AND ENTITY TYPE
 # ============================================================
 # These widgets appear at the top of the notebook.
 # Select Source System and Entity Type before running ingestion.
 # Entity Type controls which source identifiers are processed:
-#   HCP  → only hcp_* identifiers
-#   HCO  → only hco_* identifiers
-#   BOTH → all identifiers
+#   HCP  -> only hcp_* identifiers
+#   HCO  -> only hco_* identifiers
+#   BOTH -> all identifiers
 # ============================================================
 
 # Remove old widgets from previous notebook versions
@@ -82,7 +82,7 @@ for sid in source_identifiers:
 # DBTITLE 1,Imports
 # MAGIC %md #### 2. Imports
 # MAGIC
-# MAGIC Imports the ingestion pipeline function and runtime configuration. The `run_ingestion_pipeline` function processes one source identifier at a time — the notebook loops over all selected identifiers based on the Entity Type widget.
+# MAGIC Imports the ingestion pipeline function and runtime configuration. The `run_ingestion_pipeline` function processes one source identifier at a time -- the notebook loops over all selected identifiers based on the Entity Type widget.
 
 # COMMAND ----------
 

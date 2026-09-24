@@ -31,6 +31,39 @@ Stages 6-7 are the real-time, per-record API flow used when a new HCP/HCO
 needs to be checked against the MDM hub before it is created (Search
 Before Create), and are exposed via the FastAPI app in `api/`.
 
+### Snowflake bridge stages (after Egress)
+
+| # | Stage | Implementation |
+|---|-------|-----------------|
+| 8 | Databricks -> Snowflake Sync | `src/snowflake_sync/push_to_snowflake.py` (notebook `10_Snowflake_Sync`) |
+| 9 | dbt models (staging views + marts) | `dbt/` project, run via `dbt/run_dbt.sh` |
+| 10 | Snowpark master snapshot | `snowflake/snowpark/publish_master_snapshot.py` |
+
+The full pipeline orchestrator (`Databricks/09_Run_Full_Pipeline.py`)
+runs all 9 stages end-to-end (stages 1-5 as Databricks notebooks,
+then Snowflake Sync, dbt run, and Snowpark snapshot). All paths are
+resolved dynamically from the notebook context -- no hard-coded
+workspace paths, so it works for any team member.
+
+### External dependencies
+
+1. **API-to-RAW (separate flow):** The AWS Lambda bridge
+   (`src/api/download_api.py`) feeds the Informatica MDM Hub, not the
+   Databricks pipeline directly. The API-to-RAW caller
+   (`src/api/api_to_raw_caller.py`) writes to `raw.hcp_api_data` /
+   `raw.hco_api_data`, which are separate from the per-entity raw tables
+   (`raw.hcp_name`, `raw.hcp_address`, etc.) consumed by the main
+   pipeline. There is no production transformation between them. This
+   is by design.
+
+2. **Informatica MDM Hub:** The HCP child master dbt models
+   (`master_hcp_specialty`, `master_hcp_alternate_name`,
+   `master_hcp_license`, `master_hcp_therapeutic_area`) read from
+   `source('mdm_hub', ...)` which are `HMDM_DEV.MDM.*` tables created
+   by the Informatica MDM Hub engine, NOT by this repository. These
+   tables must exist and be populated before the dbt models that
+   depend on them can run successfully.
+
 ## 3. Layer naming (Unity Catalog / Snowflake)
 
 ```
@@ -84,18 +117,18 @@ itemized list. In summary:
 
 The project uses explicit vendor naming for all MDM attributes:
 
-- **Informatica** — All Informatica MDM hub attributes use the `X_informatica_*`
+- **Informatica** -- All Informatica MDM hub attributes use the `X_informatica_*`
   prefix (e.g. `X_informatica_type`, `X_informatica_Specialty`,
   `X_informatica_rank`, `HCO_X_informatica_bedCount`). Earlier versions used
   codenames `infa360` and `infac360ls`; these have been renamed throughout
   the project (Python, SQL, dbt models, Snowflake DDL) to `informatica`.
 
-- **IQVIA** — All IQVIA-related attributes use the `X_iqvia_*` prefix
+- **IQVIA** -- All IQVIA-related attributes use the `X_iqvia_*` prefix
   (e.g. `X_iqvia_title`). The JSON path `iqviaTitle` maps to `X_iqvia_title`.
   Earlier versions used the codename `jisb`; this has been renamed throughout
   to `iqvia`.
 
-- **MDM_HUB** — The Informatica MDM hub search/match API is referenced as
+- **MDM_HUB** -- The Informatica MDM hub search/match API is referenced as
   `MDM_HUB` in `src/api/download_api.py` (previously codenamed `ORIEO`).
   The `IQVIA` API (previously codenamed `JISB`) is the direct IQVIA
   individual-search API.

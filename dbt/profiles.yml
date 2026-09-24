@@ -3,11 +3,11 @@ healthcare_mdm:
   outputs:
     dev:
       type: snowflake
-      account: AXIVKAP-PF58156
-      user: HUBM
-      password: "@Devansh#4552!"
-      role: "{{ env_var('SNOWFLAKE_ROLE', 'ACCOUNTADMIN') }}"
-      database: HMDM_DEV
-      warehouse: HMDM_WH
-      schema: STAGING
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'HMDM_DEV_ROLE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'HMDM_DEV') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'HMDM_WH') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'STAGING') }}"
       threads: 4

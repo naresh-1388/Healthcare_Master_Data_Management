@@ -44,6 +44,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+import uuid
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.types import (
@@ -1663,6 +1664,14 @@ def main_data_quality_pipeline(
 
     pipeline_start = datetime.now()
 
+    # Generate a unique run ID for this DQ execution. This ID is used in
+    # both the DQ log table (dqm_log_tbl) and the DQ reject table
+    # (dqm_reject_tbl) so that log entries and rejected records can be
+    # correlated back to a single pipeline execution. Previously run_id
+    # was always NULL, making it impossible to trace rejects to a specific run.
+    run_id = str(uuid.uuid4())
+    print(f"{MODULE_NAME}: run_id={run_id}")
+
     try:
         passed_df, rejected_df = execute_source_dq(
             source_identifier=source_identifier,
@@ -1719,7 +1728,7 @@ def main_data_quality_pipeline(
 
             log_rows.append(
                 (
-                    None,
+                    run_id,
                     int(resolved_batch_id),
                     source_identifier,
                     source_system_name,
@@ -1774,7 +1783,7 @@ def main_data_quality_pipeline(
                 rejected_df
                 .withColumn(
                     "run_id",
-                    F.lit(None).cast("string"),
+                    F.lit(run_id).cast("string"),
                 )
                 .withColumn(
                     "batch_id",

@@ -8,6 +8,20 @@
 # key generation) and stay in Databricks (see src/ and Databricks/) rather
 # than being reimplemented as dbt SQL models - this project intentionally
 # picks up the pipeline where it becomes pure SQL transformation.
+#
+# Schema naming: The custom generate_schema_name macro at
+# dbt/macros/get_custom_schema.sql ensures dbt creates objects in the
+# correct schemas:
+#   staging models +schema: staging -> HMDM_DEV.STAGING (not STAGING_staging)
+#   marts models   +schema: mdm     -> HMDM_DEV.MDM (not STAGING_mdm)
+# This is critical for the Snowpark snapshot script which reads from
+# HMDM_DEV.MDM.master_hcp and HMDM_DEV.MDM.master_hco.
+#
+# External dependency: HCP child master models (master_hcp_specialty,
+# master_hcp_alternate_name, master_hcp_license, master_hcp_therapeutic_area)
+# read from source('mdm_hub', ...) which are HMDM_DEV.MDM.* tables created
+# by the Informatica MDM Hub, NOT by this repository. These tables must
+# exist and be populated before dbt models that depend on them can run.
 # ============================================================
 name: 'healthcare_mdm'
 version: '1.0.0'

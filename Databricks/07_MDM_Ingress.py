@@ -18,21 +18,21 @@
 # MAGIC Select the source system and entity type from the widget panel at the top of the notebook before running MDM ingress. The next cell creates these widgets and builds the table list based on the entity type selection.
 # MAGIC
 # MAGIC * **Source System**: IQVIA_API (production pipeline)
-# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which STAGING tables are ingressed to MDM.HCP / MDM.HCO
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH -- controls which STAGING tables are ingressed to MDM.HCP / MDM.HCO
 # MAGIC * **Source Identifier**: MDM config identifier (default: IQVIA_HMDM)
 
 # COMMAND ----------
 
 # DBTITLE 1,Widget Setup
 # ============================================================
-# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# WIDGET SETUP -- SOURCE SYSTEM AND ENTITY TYPE
 # ============================================================
 # These widgets appear at the top of the notebook.
 # Select Source System and Entity Type before running MDM ingress.
 # Entity Type controls which STAGING tables are ingressed:
-#   HCP  → only hcp_* tables → MDM.HCP
-#   HCO  → only hco_* tables → MDM.HCO
-#   BOTH → all tables → MDM.HCP and MDM.HCO
+#   HCP  -> only hcp_* tables -> MDM.HCP
+#   HCO  -> only hco_* tables -> MDM.HCO
+#   BOTH -> all tables -> MDM.HCP and MDM.HCO
 # ============================================================
 
 # Remove old widgets from previous notebook versions
@@ -151,14 +151,14 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # MAGIC
 # MAGIC This cell executes the MDM ingress pipeline for every table selected by the Entity Type widget.
 # MAGIC
-# MAGIC **Batch reset logic (important):** Only the **latest batch** for the selected source system is reset to `ingress_status = 'N'` before processing. This uses `batch_id = (SELECT MAX(batch_id) ...)` to target just the newest batch — old batches keep their 'Y' status and are **not** reprocessed.
+# MAGIC **Batch reset logic (important):** Only the **latest batch** for the selected source system is reset to `ingress_status = 'N'` before processing. This uses `batch_id = (SELECT MAX(batch_id) ...)` to target just the newest batch -- old batches keep their 'Y' status and are **not** reprocessed.
 # MAGIC
 # MAGIC **Processing flow:**
 # MAGIC 1. Reset latest batch `ingress_status` to 'N' (latest batch only, not all)
 # MAGIC 2. Loop over each (table, entity_type) pair from the widget selection:
-# MAGIC    - HCP → 13 hcp_* tables → MDM.HCP
-# MAGIC    - HCO → 9 hco_* tables → MDM.HCO
-# MAGIC    - BOTH → 22 tables → MDM.HCP and MDM.HCO (each table ingressed with its correct entity type)
+# MAGIC    - HCP -> 13 hcp_* tables -> MDM.HCP
+# MAGIC    - HCO -> 9 hco_* tables -> MDM.HCO
+# MAGIC    - BOTH -> 22 tables -> MDM.HCP and MDM.HCO (each table ingressed with its correct entity type)
 # MAGIC 3. For each table, call `run_mdm_ingress(spark, source_identifier, source_system_name, source_table, entity_type)` which:
 # MAGIC    - Reads validated data from `staging.<entity>`
 # MAGIC    - Writes attributes onto the core MDM.HCP or MDM.HCO object

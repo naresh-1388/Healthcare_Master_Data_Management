@@ -3,47 +3,162 @@ version: 2
 models:
   - name: stg_HCO_ADDRESS
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_ALTERNATE_NAME
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_EMAIL
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_HIERARCHY
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_IDENTIFICATION
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_NAME
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key (iqvia_id) - primary business key for this entity."
+        tests:
+          - not_null
   - name: stg_HCO_PHONE
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_SPECIALTY
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCO_TAX
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_ADDRESS
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_ALTERNATE_NAME
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_EDUCATION
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_EMAIL
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_HCO_AFFILIATION
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_IDENTIFICATION
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_LANGUAGE
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_LICENSE
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_NAME
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key (iqvia_id) - primary business key for this entity."
+        tests:
+          - not_null
   - name: stg_HCP_ORIGIN_UNIVERSITY
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_PHONE
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_SPECIALTY
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_TAX
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null
   - name: stg_HCP_TENDENCIES
     description: "Passthrough staging view - see sources.yml for the underlying STAGING table."
+    columns:
+      - name: Source_FK
+        description: "Foreign key to the parent name table (iqvia_id)."
+        tests:
+          - not_null

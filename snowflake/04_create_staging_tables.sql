@@ -45,8 +45,11 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.STAGING.HCP_LANGUAGE LIKE HMDM_DEV.STAGING.H
 CREATE TABLE IF NOT EXISTS HMDM_DEV.STAGING.HCP_HCO_AFFILIATION LIKE HMDM_DEV.STAGING.HCP_NAME;
 
 -- HCP_LICENSE (kept from original DDL, not synced from Databricks)
+-- Column name uses X_infa360_ prefix to match existing Snowflake table.
+-- The dbt stg_HCP_LICENSE model uses NULL casts (WHERE 1=0) so it does
+-- not depend on this column name.
 CREATE TABLE IF NOT EXISTS HMDM_DEV.STAGING.HCP_LICENSE (
-    "X_informatica_License" VARCHAR(4000)
+    "X_infa360_License" VARCHAR(4000)
 );
 
 -- HCO staging tables (9 tables, same 11-column schema)

@@ -20,22 +20,22 @@
 # MAGIC Select the source system and entity type from the widget panel at the top of the notebook before running MDM egress. The next cell creates these widgets and builds the egress group list based on the entity type selection.
 # MAGIC
 # MAGIC * **Source System**: IQVIA_API (production pipeline)
-# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which MDM tables are egressed to MASTER
-# MAGIC * **Batch ID**: Optional — blank means latest eligible batch
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH -- controls which MDM tables are egressed to MASTER
+# MAGIC * **Batch ID**: Optional -- blank means latest eligible batch
 # MAGIC * **Write Mode**: append or overwrite for the Master output table
 
 # COMMAND ----------
 
 # DBTITLE 1,Widget Setup
 # ============================================================
-# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# WIDGET SETUP -- SOURCE SYSTEM AND ENTITY TYPE
 # ============================================================
 # These widgets appear at the top of the notebook.
 # Select Source System and Entity Type before running MDM egress.
 # Entity Type controls which MDM tables are egressed to MASTER:
-#   HCP  → 5 HCP egress groups → MASTER.HCP
-#   HCO  → 5 HCO egress groups → MASTER.HCO
-#   BOTH → 10 egress groups → MASTER.HCP and MASTER.HCO
+#   HCP  -> 5 HCP egress groups -> MASTER.HCP
+#   HCO  -> 5 HCO egress groups -> MASTER.HCO
+#   BOTH -> 10 egress groups -> MASTER.HCP and MASTER.HCO
 # ============================================================
 
 # Create dropdown widgets
@@ -159,19 +159,22 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # MAGIC
 # MAGIC This cell executes the MDM egress pipeline for every egress group selected by the Entity Type widget.
 # MAGIC
-# MAGIC **Batch reset logic (important):** Only the **latest batch** for the selected source system is reset to `egress_status = 'N'` before processing. This uses `batch_id = (SELECT MAX(batch_id) ...)` to target just the newest batch — old batches keep their 'Y' status and are **not** reprocessed.
+# MAGIC **Batch reset logic (important):** Only the **latest batch** for the selected source system is reset to `egress_status = 'N'` before processing. This uses `batch_id = (SELECT MAX(batch_id) ...)` to target just the newest batch -- old batches keep their 'Y' status and are **not** reprocessed.
 # MAGIC
 # MAGIC **Processing flow:**
 # MAGIC 1. Reset latest batch `egress_status` to 'N' (latest batch only, not all)
-# MAGIC 2. Loop over each (source_table, target_table) egress group:
-# MAGIC    - HCP → 5 groups (HCP, HCP_SPECIALTY, HCP_ALTERNATE_NAME, HCP_EDUCATION, HCP_IDENTIFICATION)
-# MAGIC    - HCO → 5 groups (HCO, HCO_NAME, HCO_ALTERNATE_IDENTIFIER, HCO_PHONE, HCO_SPECIALTY)
-# MAGIC    - BOTH → 10 groups (all HCP + all HCO)
-# MAGIC 3. For each group, call `run_mdm_egress(spark, source_system_name, source_table, target_table, batch_id, write_mode)` which:
+# MAGIC 2. Resolve `batch_id` via SQL query (bypasses module's `get_latest_eligible_batch()`
+# MAGIC    which uses `spark.table()` and may not reflect the UPDATE above on Spark Connect)
+# MAGIC 3. Loop over each (source_table, target_table) egress group:
+# MAGIC    - HCP -> 5 groups (HCP, HCP_SPECIALTY, HCP_ALTERNATE_NAME, HCP_EDUCATION, HCP_IDENTIFICATION)
+# MAGIC    - HCO -> 5 groups (HCO, HCO_NAME, HCO_ALTERNATE_IDENTIFIER, HCO_PHONE, HCO_SPECIALTY)
+# MAGIC    - BOTH -> 10 groups (all HCP + all HCO)
+# MAGIC 4. For each group, call `run_mdm_egress(spark, source_system_name, source_table, target_table, batch_id, write_mode, skip_batch_update=True)` which:
 # MAGIC    - Reads mastered data from `mdm.<entity>`
 # MAGIC    - Writes to `master.<entity>` using the selected write mode (append/overwrite)
 # MAGIC    - Returns count of rows written
-# MAGIC 4. After all groups processed, update latest batch `egress_status` to 'Y' (only if no failures)
+# MAGIC    - `skip_batch_update=True` defers batch status update to this cell (after all groups)
+# MAGIC 5. After all groups processed, update latest batch `egress_status` to 'Y' (only if no failures)
 # MAGIC
 # MAGIC **Failure handling:** If a source table doesn't exist yet (upstream not run), it is skipped. Other failures are logged and the loop continues. Only actual failures prevent the batch status from being set to 'Y'.
 

@@ -2,13 +2,23 @@
 Healthcare MDM - Snowpark publish job.
 
 Runs entirely inside Snowflake (via Snowpark) to snapshot the current
-MASTER.HCP / MASTER.HCO tables into date-stamped, immutable snapshot
-tables for downstream consumers who need a stable "as of" view rather
-than reading the continuously-updated MASTER tables directly.
+HMDM_DEV.MDM.master_hcp / HMDM_DEV.MDM.master_hco tables into date-stamped,
+immutable snapshot tables for downstream consumers who need a stable
+"as of" view rather than reading the continuously-updated master tables
+directly.
 
 This complements (does not replace) the dbt models in dbt/models/marts/,
-which build the MASTER tables themselves - this job runs after dbt and
+which build the master tables themselves - this job runs after dbt and
 only makes read-only snapshot copies.
+
+Credential passing:
+    This script reads Snowflake connection parameters from environment
+    variables (see CONNECTION_PARAMETERS_ENV_VARS). When called from
+    09_Run_Full_Pipeline.py (Stage 9), the parent Python notebook fetches
+    credentials from AWS Secrets Manager and passes them explicitly via
+    the env= parameter of subprocess.run(). This is necessary because
+    credentials exported by run_dbt.sh (Stage 8) inside its own shell
+    process do NOT propagate back to the parent Python process.
 
 Usage:
     python snowpark/publish_master_snapshot.py --entity HCP
@@ -55,8 +65,11 @@ def build_session() -> Session:
 
 def publish_snapshot(session: Session, entity: str) -> str:
     """
-    Copy HMDM_DEV.MASTER.<entity> into a new, immutable
+    Copy HMDM_DEV.MDM.master_<entity> into a new, immutable
     HMDM_DEV.MASTER.<entity>_SNAPSHOT_<YYYYMMDD> table.
+
+    The source table is created by dbt (master_hcp / master_hco) in the
+    MDM schema. The snapshot is stored in the MASTER schema.
 
     Args:
         session: Active Snowpark session.

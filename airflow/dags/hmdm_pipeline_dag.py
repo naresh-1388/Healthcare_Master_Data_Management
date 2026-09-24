@@ -1,7 +1,7 @@
 """
 Healthcare MDM - Airflow DAG.
 
-Orchestrates the same 6-stage pipeline as
+Orchestrates the same 9-stage pipeline as
 Databricks/09_Run_Full_Pipeline.py, but as an Airflow DAG that triggers
 each Databricks notebook as a job run via the Databricks Airflow provider.
 Use this DAG instead of the Databricks Workflow scheduler when the
@@ -10,7 +10,13 @@ or when your team standardizes orchestration on Airflow.
 
 Stage order mirrors the medallion architecture in the HMDM_DEV mapping
 workbook: Source -> Raw -> Landing -> (canonical) -> Staging -> MDM Ingress
-(HCP, HCO) -> MDM Egress (HCP Master, HCO Master).
+(HCP, HCO) -> MDM Egress (HCP Master, HCO Master) -> Snowflake Sync ->
+dbt run -> Snowpark snapshot.
+
+IMPORTANT: Replace all placeholder Job IDs in JOB_IDS below with the
+real Databricks Job IDs before deploying this DAG. Until the placeholders
+are replaced, this DAG serves as documentation/template only and will
+fail at runtime with invalid job ID errors.
 """
 
 from __future__ import annotations
@@ -39,6 +45,23 @@ JOB_IDS = {
     "snowpark_snapshot": "<DATABRICKS_JOB_ID_SNOWPARK_SNAPSHOT>",
 }
 
+# -----------------------------------------------------------------------
+# External dependencies (not orchestrated by this DAG):
+#
+# 1. API-to-RAW (src/api/api_to_raw_caller.py): A separate real-time
+#    integration that writes raw.hcp_api_data / raw.hco_api_data. The
+#    main pipeline starts at 03_Ingestion_SrcToRaw which reads from the
+#    RAW schema. There is no transformation from the API tables to the
+#    per-entity raw tables consumed by the main pipeline. This is by
+#    design -- the AWS Lambda bridge feeds the Informatica MDM Hub.
+#
+# 2. Informatica MDM Hub: The HCP child master dbt models read from
+#    HMDM_DEV.MDM.* tables (hcp_specialty, hcp_alternate_name,
+#    hcp_license, hcp_therapeutic_area) created by the Informatica MDM
+#    Hub engine, NOT by this pipeline. These must exist and be populated
+#    before the dbt run (Stage 8) can succeed for those models.
+# -----------------------------------------------------------------------
+
 default_args = {
     "owner": "hmdm-data-engineering",
     "retries": 2,
@@ -48,7 +71,7 @@ default_args = {
 
 with DAG(
     dag_id="hmdm_iqvia_hcp_hco_pipeline",
-    description="Healthcare MDM: IQVIA Source -> Raw -> Landing -> Staging -> MDM Ingress -> MDM Egress",
+    description="Healthcare MDM: IQVIA Source -> Raw -> Landing -> Staging -> MDM Ingress -> MDM Egress -> Snowflake Sync -> dbt -> Snowpark",
     default_args=default_args,
     schedule_interval="0 3 * * *",  # daily at 03:00 - adjust to match the real IQVIA feed cadence
     start_date=datetime(2026, 1, 1),
@@ -73,12 +96,22 @@ with DAG(
     t_ingress_hco = databricks_task("mdm_ingress_hco", "ingress_hco", {"entity_type": "HCO"})
     t_egress_hcp = databricks_task("mdm_egress_hcp_master", "egress_hcp", {"entity_type": "HCP"})
     t_egress_hco = databricks_task("mdm_egress_hco_master", "egress_hco", {"entity_type": "HCO"})
+    t_snowflake_sync = databricks_task("snowflake_sync", "snowflake_sync")
+    t_dbt_run = databricks_task("dbt_run", "dbt_run")
+    t_snowpark_snapshot = databricks_task("snowpark_snapshot", "snowpark_snapshot")
 
     # Dependency chain matches get_batch_status_filter() in
     # src/core/runtime_config.py: raw_ingestion -> stdz -> canonical -> dq
-    # -> ingress -> egress. HCP and HCO ingress/egress run in parallel
-    # since they are independent entities once Staging is ready.
+    # -> ingress -> egress -> snowflake_sync -> dbt -> snowpark.
+    # HCP and HCO ingress/egress run in parallel since they are
+    # independent entities once Staging is ready. Snowflake sync, dbt,
+    # and Snowpark snapshot run sequentially AFTER both egress stages
+    # complete -- they depend on all master tables being ready.
     t_ingestion >> t_standardization >> t_canonical >> t_dq
     t_dq >> [t_ingress_hcp, t_ingress_hco]
     t_ingress_hcp >> t_egress_hcp
     t_ingress_hco >> t_egress_hco
+    # Both egress stages must complete before Snowflake sync starts.
+    [t_egress_hcp, t_egress_hco] >> t_snowflake_sync
+    t_snowflake_sync >> t_dbt_run
+    t_dbt_run >> t_snowpark_snapshot

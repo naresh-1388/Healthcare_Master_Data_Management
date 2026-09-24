@@ -14,6 +14,13 @@ flowchart TD
     MDM_HCP_CHILD --> EGRESS_HCP
     MDM_HCO --> EGRESS_HCO[(MASTER.HCO*\nMDM_HUB_Egress-HCO_Master)]
 
+    %% Snowflake bridge stages (after Egress)
+    EGRESS_HCP -->|Snowflake Sync\nStage 7| SNOW_STAGE[(Snowflake STAGING\nsrc/snowflake_sync)]
+    EGRESS_HCO --> SNOW_STAGE
+    STAGE -->|staging tables| SNOW_STAGE
+    SNOW_STAGE -->|dbt run\nStage 8| DBT_MDM[(Snowflake MDM\ndbt marts)]
+    DBT_MDM -->|Snowpark snapshot\nStage 9| SNAPSHOT[(Snowflake MASTER\nsnapshot tables)]
+
     IQVIA -.->|real-time Search-Before-Create| SBC[src/api/sbc.py]
     SBC -.-> MDM_HCP
     IQVIA -.->|Lambda bridge, incl. Licenses| DL[src/api/download_api.py]

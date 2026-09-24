@@ -5,7 +5,7 @@
 # ///
 # DBTITLE 1,Notebook Title
 # MAGIC %md
-# MAGIC ### Healthcare_Master_Data_Management — API and Transformation Validations
+# MAGIC ### Healthcare_Master_Data_Management -- API and Transformation Validations
 # MAGIC
 # MAGIC This notebook validates the project's API transformation functions, data quality rules, batch control framework, end-to-end API-to-RAW pipeline, and HCO data pipeline. Use the widgets at the top to select the source system (IQVIA_API or TEST) and entity type (HCP, HCO, or BOTH). Each test is self-contained and can be run independently.
 
@@ -18,13 +18,13 @@
 # MAGIC Select the source system and entity type before running tests. These widgets control which source system and entity type the pipeline tests use.
 # MAGIC
 # MAGIC * **Source System**: IQVIA_API (production pipeline) or TEST (test pipeline)
-# MAGIC * **Entity Type**: HCP, HCO, or BOTH — controls which pipeline verification tests run
+# MAGIC * **Entity Type**: HCP, HCO, or BOTH -- controls which pipeline verification tests run
 
 # COMMAND ----------
 
 # DBTITLE 1,Widget Setup
 # ============================================================
-# WIDGET SETUP — SOURCE SYSTEM AND ENTITY TYPE
+# WIDGET SETUP -- SOURCE SYSTEM AND ENTITY TYPE
 # ============================================================
 # These widgets appear at the top of the notebook.
 # Select Source System and Entity Type before running tests.
@@ -43,7 +43,7 @@ print(f"Entity Type   : {SELECTED_ENTITY}")
 # COMMAND ----------
 
 # ============================================================
-# INITIALIZATION — SOURCE PATH AND COMMON IMPORTS
+# INITIALIZATION -- SOURCE PATH AND COMMON IMPORTS
 # ============================================================
 # This is the single initialization/import cell for the notebook.
 # Do not repeat project imports inside individual test cells.
@@ -106,7 +106,7 @@ print("Common project imports: PASS")
 # MAGIC **This section verifies that required test infrastructure exists:**
 # MAGIC - Test schemas: `staging`, `util`
 # MAGIC - Test tables: DQ test table, control tables
-# MAGIC - Test data: TEST_HCP records (HCP only — no HCO DQ test table exists)
+# MAGIC - Test data: TEST_HCP records (HCP only -- no HCO DQ test table exists)
 # MAGIC
 # MAGIC **Safe to re-run:** All checks and creation statements are idempotent.
 
@@ -126,7 +126,7 @@ print("Common project imports: PASS")
 # MAGIC %md
 # MAGIC #### Verify Test Data Tables
 # MAGIC
-# MAGIC Checks that all required test infrastructure tables exist before running validation tests. This includes the DQ test table, batch control log, audit log, DQ log, and DQ reject table. If any table is missing, a warning is printed — some tests may fail.
+# MAGIC Checks that all required test infrastructure tables exist before running validation tests. This includes the DQ test table, batch control log, audit log, DQ log, and DQ reject table. If any table is missing, a warning is printed -- some tests may fail.
 
 # COMMAND ----------
 
@@ -221,15 +221,15 @@ print("DQ rule-set validation: PASS")
 
 # DBTITLE 1,Tests 1-4 IQVIA Transformation
 # MAGIC %md
-# MAGIC ## Tests 1-4 — IQVIA Transformation (HCP)
+# MAGIC ## Tests 1-4 -- IQVIA Transformation (HCP)
 # MAGIC
-# MAGIC The `transform_to_iqvia` function maps HCP records to IQVIA API format using country-to-codBase mapping (NL to WNL, BE to WBE). This function is HCP-specific — it uses `firstName`, `lastName`, and `middleName` fields that do not apply to HCO records.
+# MAGIC The `transform_to_iqvia` function maps HCP records to IQVIA API format using country-to-codBase mapping (NL to WNL, BE to WBE). This function is HCP-specific -- it uses `firstName`, `lastName`, and `middleName` fields that do not apply to HCO records.
 # MAGIC
 # MAGIC Four tests are combined in the next cell:
-# MAGIC * Test 1: Netherlands positive case — NL maps to WNL
-# MAGIC * Test 2: Belgium positive case — BE maps to WBE
-# MAGIC * Test 3: Unsupported country (US) — raises IQVIATransformationError
-# MAGIC * Test 4: Missing countryCode — raises IQVIATransformationError
+# MAGIC * Test 1: Netherlands positive case -- NL maps to WNL
+# MAGIC * Test 2: Belgium positive case -- BE maps to WBE
+# MAGIC * Test 3: Unsupported country (US) -- raises IQVIATransformationError
+# MAGIC * Test 4: Missing countryCode -- raises IQVIATransformationError
 # MAGIC
 # MAGIC Widget selection: These tests run when Entity Type is HCP or BOTH. They are skipped when HCO is selected because the transformation function does not support HCO fields.
 
@@ -237,7 +237,7 @@ print("DQ rule-set validation: PASS")
 
 # DBTITLE 1,Tests 1-4 - IQVIA Transformation
 # ============================================================
-# TESTS 1-4 — IQVIA TRANSFORMATION (HCP ONLY)
+# TESTS 1-4 -- IQVIA TRANSFORMATION (HCP ONLY)
 # ============================================================
 # The transform_to_iqvia function maps HCP records to IQVIA
 # API format using country-to-codBase mapping:
@@ -260,7 +260,7 @@ print(f"Source System selected: {SELECTED_SOURCE}")
 print("=" * 60)
 
 if SELECTED_ENTITY == "HCO":
-    print("Tests 1-4 — IQVIA Transformation: SKIPPED")
+    print("Tests 1-4 -- IQVIA Transformation: SKIPPED")
     print("Reason: transform_to_iqvia is HCP-specific (uses firstName, lastName).")
     print("HCO records use different fields (organizationName, etc.) and are")
     print("not supported by this function.")
@@ -277,8 +277,8 @@ else:
     iqvia_nl = transform_to_iqvia.transform_to_iqvia(mock_hcp_nl)
     assert isinstance(iqvia_nl, dict)
     assert iqvia_nl["codBases"] == ["WNL"]
-    print(f"Test 1 — IQVIA NL: codBases={iqvia_nl['codBases']}, fields={len(iqvia_nl['fields'])} — PASS")
-    test_results.append(("Test 1 — IQVIA NL positive", "PASS"))
+    print(f"Test 1 -- IQVIA NL: codBases={iqvia_nl['codBases']}, fields={len(iqvia_nl['fields'])} -- PASS")
+    test_results.append(("Test 1 -- IQVIA NL positive", "PASS"))
 
     # --- Test 2: Belgium positive case (BE -> WBE) ---
     mock_hcp_be = {
@@ -289,8 +289,8 @@ else:
     iqvia_be = transform_to_iqvia.transform_to_iqvia(mock_hcp_be)
     assert isinstance(iqvia_be, dict)
     assert iqvia_be["codBases"] == ["WBE"]
-    print(f"Test 2 — IQVIA BE: codBases={iqvia_be['codBases']}, fields={len(iqvia_be['fields'])} — PASS")
-    test_results.append(("Test 2 — IQVIA BE positive", "PASS"))
+    print(f"Test 2 -- IQVIA BE: codBases={iqvia_be['codBases']}, fields={len(iqvia_be['fields'])} -- PASS")
+    test_results.append(("Test 2 -- IQVIA BE positive", "PASS"))
 
     # --- Test 3: Unsupported country negative case (US -> error) ---
     mock_hcp_us = {
@@ -302,8 +302,8 @@ else:
         transform_to_iqvia.transform_to_iqvia(mock_hcp_us)
         raise AssertionError("Expected IQVIATransformationError for unsupported country US.")
     except transform_to_iqvia.IQVIATransformationError as exc:
-        print(f"Test 3 — Unsupported country: {exc} — PASS")
-        test_results.append(("Test 3 — Unsupported country negative", "PASS"))
+        print(f"Test 3 -- Unsupported country: {exc} -- PASS")
+        test_results.append(("Test 3 -- Unsupported country negative", "PASS"))
 
     # --- Test 4: Missing countryCode negative case (-> error) ---
     mock_hcp_missing_country = {
@@ -315,8 +315,8 @@ else:
         transform_to_iqvia.transform_to_iqvia(mock_hcp_missing_country)
         raise AssertionError("Expected IQVIATransformationError for missing countryCode.")
     except transform_to_iqvia.IQVIATransformationError as exc:
-        print(f"Test 4 — Missing countryCode: {exc} — PASS")
-        test_results.append(("Test 4 — Missing countryCode negative", "PASS"))
+        print(f"Test 4 -- Missing countryCode: {exc} -- PASS")
+        test_results.append(("Test 4 -- Missing countryCode negative", "PASS"))
 
     print("\n" + "=" * 60)
     print(f"IQVIA Transformation Tests (Entity: {SELECTED_ENTITY}, Source: {SELECTED_SOURCE})")
@@ -330,7 +330,7 @@ else:
 
 # DBTITLE 1,Test 5 header
 # MAGIC %md
-# MAGIC ## Test 5 — Data Quality: firstName NULL Rejection (HCP)
+# MAGIC ## Test 5 -- Data Quality: firstName NULL Rejection (HCP)
 # MAGIC
 # MAGIC Runs the project DQ rules against the HCP test table where one record has a NULL `firstName`. Expects 2 records to pass and 1 to be rejected. The DQ framework identifies and rejects records with NULL mandatory fields.
 # MAGIC
@@ -340,7 +340,7 @@ else:
 
 # DBTITLE 1,Test 5 - DQ rejection
 # ============================================================
-# TEST 5 — DATA QUALITY: firstName NULL REJECTION (HCP)
+# TEST 5 -- DATA QUALITY: firstName NULL REJECTION (HCP)
 # ============================================================
 # Purpose:
 #   Execute the TEST_HCP DQ configuration against the dedicated
@@ -360,7 +360,7 @@ print(f"Entity Type selected: {SELECTED_ENTITY}")
 print("=" * 60)
 
 if SELECTED_ENTITY == "HCO":
-    print("Test 5 — DQ firstName NULL Rejection: SKIPPED")
+    print("Test 5 -- DQ firstName NULL Rejection: SKIPPED")
     print("Reason: The DQ test table (hcp_name_dq_test) and TEST_HCP")
     print("source identifier are HCP-specific. No HCO DQ test table exists.")
     print("=" * 60)
@@ -390,7 +390,7 @@ else:
     print("\nRejected record:")
     display(rejected_df)
 
-    print(f"\nTest 5 — DQ rejection (Entity: {SELECTED_ENTITY}): PASS")
+    print(f"\nTest 5 -- DQ rejection (Entity: {SELECTED_ENTITY}): PASS")
     print("=" * 60)
 
 
@@ -398,7 +398,7 @@ else:
 
 # DBTITLE 1,Test 6 header
 # MAGIC %md
-# MAGIC ## Test 6 — Batch / Control / Audit verification
+# MAGIC ## Test 6 -- Batch / Control / Audit verification
 # MAGIC
 # MAGIC Verifies that the Databricks control and audit framework is properly set up. Checks that control tables (batch log, audit log, DQ log, reject table) exist, that the selected source system batch history shows RAW and Standardization completed, and that pipeline audit logs are present. Uses the source system selected in the widget (IQVIA_API or TEST).
 
@@ -406,7 +406,7 @@ else:
 
 # DBTITLE 1,Test 6 - Batch/Control/Audit
 # ============================================================
-# TEST 6 — BATCH / CONTROL / AUDIT VERIFICATION
+# TEST 6 -- BATCH / CONTROL / AUDIT VERIFICATION
 # ============================================================
 # Purpose:
 #   Verify that the existing Databricks control/audit framework
@@ -504,7 +504,7 @@ print(reject_df.columns)
 print("DQ rejection table availability check: PASS")
 
 print("\n" + "=" * 60)
-print("TEST 6 — BATCH / CONTROL / AUDIT VERIFICATION: PASS")
+print("TEST 6 -- BATCH / CONTROL / AUDIT VERIFICATION: PASS")
 print("=" * 60)
 
 
@@ -512,7 +512,7 @@ print("=" * 60)
 
 # DBTITLE 1,Test 7 header
 # MAGIC %md
-# MAGIC ## Test 7 — MDM_HUB Transformation (HCP)
+# MAGIC ## Test 7 -- MDM_HUB Transformation (HCP)
 # MAGIC
 # MAGIC Validates the MDM_HUB transformation function using a mock HCP input with SBC-style dotted attributes (`hcp.firstName`, `address.countryCode`, etc.). Verifies country-to-population mapping (NL to netherlands), field mapping (firstName, lastName, fullName), and nested address structure.
 # MAGIC
@@ -522,7 +522,7 @@ print("=" * 60)
 
 # DBTITLE 1,Test 7 - MDM_HUB
 # ============================================================
-# TEST 7 — MDM_HUB TRANSFORMATION (HCP)
+# TEST 7 -- MDM_HUB TRANSFORMATION (HCP)
 # ============================================================
 # The MDM_HUB transformation maps SBC-style dotted attributes
 # (hcp.firstName, address.countryCode, etc.) to the MDM Hub
@@ -536,7 +536,7 @@ print(f"Entity Type selected: {SELECTED_ENTITY}")
 print("=" * 60)
 
 if SELECTED_ENTITY == "HCO":
-    print("Test 7 — MDM_HUB Transformation: SKIPPED")
+    print("Test 7 -- MDM_HUB Transformation: SKIPPED")
     print("Reason: The MDM_HUB transformation uses HCP-specific field")
     print("mappings (hcp.firstName, hcp.lastName, etc.). HCO uses")
     print("different fields (organizationName, etc.).")
@@ -576,7 +576,7 @@ else:
     print("MDM_HUB fullName:", search_record["fullName"])
     print("MDM_HUB address:", search_record["X_hcp_address"][0])
 
-    print(f"\nTest 7 — MDM_HUB transformation (Entity: {SELECTED_ENTITY}): PASS")
+    print(f"\nTest 7 -- MDM_HUB transformation (Entity: {SELECTED_ENTITY}): PASS")
     print("=" * 60)
 
 
@@ -591,16 +591,16 @@ else:
 # MAGIC | Test | Area | Entity | Cell |
 # MAGIC |---|---|---|---|
 # MAGIC | 1-4 | IQVIA transformation (NL, BE, unsupported, missing country) | HCP only | Combined |
-# MAGIC | 5 | Data Quality — firstName NULL rejection | HCP only | Single |
+# MAGIC | 5 | Data Quality -- firstName NULL rejection | HCP only | Single |
 # MAGIC | 6 | Batch / Control / Audit verification | Both (widget-driven) | Single |
 # MAGIC | 7 | MDM_HUB transformation | HCP only | Single |
 # MAGIC | 8-9 | API to RAW pipeline + HCO pipeline verification | HCP + HCO (widget-driven) | Combined |
 # MAGIC
 # MAGIC Widget behavior:
-# MAGIC * **HCP** — Tests 1-7 run (HCP transformations, DQ, batch, MDM_HUB). Tests 8-9 show HCP RAW data only.
-# MAGIC * **HCO** — Tests 1-4, 5, 7 are skipped (HCP-specific). Tests 8-9 show HCO RAW data and HCO pipeline layers.
-# MAGIC * **BOTH** — All tests run. Tests 8-9 show both HCP and HCO data.
-# MAGIC * **Source System** — Test 6 filters batch and audit logs by the selected source system.
+# MAGIC * **HCP** -- Tests 1-7 run (HCP transformations, DQ, batch, MDM_HUB). Tests 8-9 show HCP RAW data only.
+# MAGIC * **HCO** -- Tests 1-4, 5, 7 are skipped (HCP-specific). Tests 8-9 show HCO RAW data and HCO pipeline layers.
+# MAGIC * **BOTH** -- All tests run. Tests 8-9 show both HCP and HCO data.
+# MAGIC * **Source System** -- Test 6 filters batch and audit logs by the selected source system.
 # MAGIC
 
 # COMMAND ----------
@@ -670,20 +670,20 @@ except Exception as e:
 
 # DBTITLE 1,Tests 8-9 API Pipeline
 # MAGIC %md
-# MAGIC ## Tests 8-9 — API Pipeline Verification (HCP + HCO)
+# MAGIC ## Tests 8-9 -- API Pipeline Verification (HCP + HCO)
 # MAGIC
 # MAGIC Test 8 calls the Lambda API to fetch HCP and HCO records and writes them to the RAW layer. Test 9 verifies HCO data exists across all pipeline layers (RAW, Staging, MDM, Master).
 # MAGIC
 # MAGIC Widget selection controls the output:
-# MAGIC * **HCP** — shows HCP RAW data only; Test 9 (HCO pipeline) is skipped
-# MAGIC * **HCO** — shows HCO RAW data and HCO pipeline layer verification
-# MAGIC * **BOTH** — shows both HCP and HCO RAW data, plus HCO pipeline layer verification
+# MAGIC * **HCP** -- shows HCP RAW data only; Test 9 (HCO pipeline) is skipped
+# MAGIC * **HCO** -- shows HCO RAW data and HCO pipeline layer verification
+# MAGIC * **BOTH** -- shows both HCP and HCO RAW data, plus HCO pipeline layer verification
 
 # COMMAND ----------
 
 # DBTITLE 1,Tests 8-9 - API Pipeline
 # ============================================================
-# TESTS 8-9 — API PIPELINE VERIFICATION (HCP + HCO)
+# TESTS 8-9 -- API PIPELINE VERIFICATION (HCP + HCO)
 # ============================================================
 # Test 8: Calls Lambda API to fetch HCP and HCO records,
 #         writes them to the RAW layer.
@@ -724,9 +724,9 @@ print("=" * 60)
 test_results = []
 
 # ------------------------------------------------------------
-# TEST 8 — API to RAW Pipeline
+# TEST 8 -- API to RAW Pipeline
 # ------------------------------------------------------------
-print("\nTEST 8 — API to RAW Pipeline")
+print("\nTEST 8 -- API to RAW Pipeline")
 print("-" * 60)
 
 try:
@@ -774,24 +774,24 @@ try:
             except Exception as hco_raw_err:
                 print(f"  HCO RAW table not accessible: {hco_raw_err}")
 
-        print("TEST 8 — API to RAW pipeline: PASS")
-        test_results.append(("Test 8 — API to RAW", "PASS"))
+        print("TEST 8 -- API to RAW pipeline: PASS")
+        test_results.append(("Test 8 -- API to RAW", "PASS"))
     else:
-        print("TEST 8 — API to RAW pipeline: FAIL")
+        print("TEST 8 -- API to RAW pipeline: FAIL")
         print("No records processed successfully")
-        test_results.append(("Test 8 — API to RAW", "FAIL"))
+        test_results.append(("Test 8 -- API to RAW", "FAIL"))
 
 except Exception as e:
-    print(f"TEST 8 — API to RAW pipeline: ERROR")
+    print(f"TEST 8 -- API to RAW pipeline: ERROR")
     print(f"Error: {str(e)}")
-    test_results.append(("Test 8 — API to RAW", "ERROR"))
+    test_results.append(("Test 8 -- API to RAW", "ERROR"))
 
 # ------------------------------------------------------------
-# TEST 9 — HCO Data Pipeline Verification
+# TEST 9 -- HCO Data Pipeline Verification
 # ------------------------------------------------------------
 if SELECTED_ENTITY in ("HCO", "BOTH"):
     print("\n" + "=" * 60)
-    print("TEST 9 — HCO Data Pipeline Verification")
+    print("TEST 9 -- HCO Data Pipeline Verification")
     print("-" * 60)
 
     failures = []
@@ -871,18 +871,18 @@ if SELECTED_ENTITY in ("HCO", "BOTH"):
     print(f"  Master total: {master_total} rows across {len(hco_master_tables)} tables")
 
     if not failures:
-        print(f"\nTEST 9 — HCO Pipeline: PASS")
+        print(f"\nTEST 9 -- HCO Pipeline: PASS")
         print(f"  RAW: {raw_count}, Staging: {staging_total}, MDM: {mdm_total}, Master: {master_total}")
-        test_results.append(("Test 9 — HCO Pipeline", "PASS"))
+        test_results.append(("Test 9 -- HCO Pipeline", "PASS"))
     else:
-        print(f"\nTEST 9 — HCO Pipeline: FAIL ({len(failures)} issues)")
+        print(f"\nTEST 9 -- HCO Pipeline: FAIL ({len(failures)} issues)")
         for f in failures:
             print(f"  - {f}")
-        test_results.append(("Test 9 — HCO Pipeline", "FAIL"))
+        test_results.append(("Test 9 -- HCO Pipeline", "FAIL"))
 else:
-    print("\nTEST 9 — HCO Pipeline Verification: SKIPPED")
+    print("\nTEST 9 -- HCO Pipeline Verification: SKIPPED")
     print(f"Reason: Entity Type is {SELECTED_ENTITY} (requires HCO or BOTH)")
-    test_results.append(("Test 9 — HCO Pipeline", "SKIPPED"))
+    test_results.append(("Test 9 -- HCO Pipeline", "SKIPPED"))
 
 # ------------------------------------------------------------
 # Summary

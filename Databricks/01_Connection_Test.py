@@ -4,7 +4,7 @@
 # environment_version = "5"
 # ///
 # MAGIC %md
-# MAGIC ### Healthcare_Master_Data_Management — Connection Validations
+# MAGIC ### Healthcare_Master_Data_Management -- Connection Validations
 # MAGIC
 
 # COMMAND ----------
@@ -18,7 +18,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Install Snowflake Connector
-# Install Snowflake connector (required on Serverless — not pre-installed)
+# Install Snowflake connector (required on Serverless -- not pre-installed)
 # restartPython() runs BEFORE any variable definitions, so state loss is harmless.
 %pip install snowflake-connector-python --quiet
 dbutils.library.restartPython()
@@ -29,7 +29,7 @@ dbutils.library.restartPython()
 # MAGIC %md
 # MAGIC #### Databricks / Spark Check
 # MAGIC
-# MAGIC Confirms the notebook is running in a Databricks environment with Spark available. Prints the Spark version as a simple validation. This is the base check — if Spark is not available, remaining cells will not work.
+# MAGIC Confirms the notebook is running in a Databricks environment with Spark available. Prints the Spark version as a simple validation. This is the base check -- if Spark is not available, remaining cells will not work.
 
 # COMMAND ----------
 
@@ -45,7 +45,7 @@ print("Spark version:", spark.version)
 # MAGIC %md
 # MAGIC #### AWS Secrets Manager Connection
 # MAGIC
-# MAGIC Connects to AWS Secrets Manager to retrieve Snowflake credentials. Uses Databricks service credential (`dbutils.credentials.getServiceCredentialsProvider`) — no AWS keys are stored in the code.
+# MAGIC Connects to AWS Secrets Manager to retrieve Snowflake credentials. Uses Databricks service credential (`dbutils.credentials.getServiceCredentialsProvider`) -- no AWS keys are stored in the code.
 
 # COMMAND ----------
 
@@ -70,7 +70,7 @@ print("Region: us-east-1")
 # MAGIC %md
 # MAGIC #### Retrieve Snowflake Credentials
 # MAGIC
-# MAGIC Reads Snowflake account details from AWS Secrets Manager — user, password, warehouse, database, and schema. These stay in memory only and are never printed. The secret contains: `snowflake_user`, `snowflake_password`, `snowflake_account`, `snowflake_warehouse`, `snowflake_database`, `snowflake_schema`.
+# MAGIC Reads Snowflake account details from AWS Secrets Manager -- user, password, warehouse, database, and schema. These stay in memory only and are never printed. The secret contains: `snowflake_user`, `snowflake_password`, `snowflake_account`, `snowflake_warehouse`, `snowflake_database`, `snowflake_schema`.
 
 # COMMAND ----------
 
@@ -106,7 +106,7 @@ print("Snowflake credentials retrieved: SUCCESS")
 
 import snowflake.connector
 
-# Create connection (eager — raises immediately on failure)
+# Create connection (eager -- raises immediately on failure)
 conn = snowflake.connector.connect(
     account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
     user=sf_user,
@@ -117,7 +117,7 @@ conn = snowflake.connector.connect(
 )
 
 try:
-    # Execute test query (eager — raises on SQL error)
+    # Execute test query (eager -- raises on SQL error)
     cursor = conn.cursor()
     cursor.execute("SELECT CURRENT_USER() AS USER_NAME, CURRENT_DATABASE() AS DB_NAME, CURRENT_SCHEMA() AS SCHEMA_NAME, CURRENT_WAREHOUSE() AS WH_NAME")
     result = cursor.fetchall()
@@ -155,7 +155,7 @@ except Exception as e:
 
 import snowflake.connector
 
-# Create connection (eager — raises immediately on failure)
+# Create connection (eager -- raises immediately on failure)
 conn = snowflake.connector.connect(
     account=secret["snowflake_account"].replace('.snowflakecomputing.com', ''),
     user=sf_user,
@@ -166,7 +166,7 @@ conn = snowflake.connector.connect(
 )
 
 try:
-    # Create test table (eager — raises on SQL error)
+    # Create test table (eager -- raises on SQL error)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE OR REPLACE TABLE CONNECTION_TEST (
@@ -178,7 +178,7 @@ try:
         )
     """)
     
-    # Insert test data (eager — raises on SQL error)
+    # Insert test data (eager -- raises on SQL error)
     cursor.execute("""
         INSERT INTO CONNECTION_TEST (USER_NAME, DB_NAME, SCHEMA_NAME, WH_NAME)
         SELECT CURRENT_USER(), CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_WAREHOUSE()

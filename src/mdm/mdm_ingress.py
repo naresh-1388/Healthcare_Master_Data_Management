@@ -1350,7 +1350,7 @@ def prepare_hcp_ingress(
 
 
 # ---------------------------------------------------------------------------
-# HCO ingress (simple — uses DEV_HCO_FIELD_MAPPING like HCP)
+# HCO ingress (simple -- uses DEV_HCO_FIELD_MAPPING like HCP)
 # ---------------------------------------------------------------------------
 
 def prepare_hco_simple_ingress(
@@ -1401,7 +1401,7 @@ def prepare_hco_simple_ingress(
 
 
 # ---------------------------------------------------------------------------
-# HCO ingress (legacy — uses HCO_INGRESS_MAPPING column-level mapping)
+# HCO ingress (legacy -- uses HCO_INGRESS_MAPPING column-level mapping)
 # ---------------------------------------------------------------------------
 
 def prepare_hco_ingress(
