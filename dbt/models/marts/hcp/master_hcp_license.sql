@@ -9,10 +9,10 @@
 -- as audited in the workbook).
 
 select
-    "X_informatica_License_parentId" as "Global_HCP_ID",
+    "X_infa360_License_parentId" as "Global_HCP_ID",
     "sourcePKey" as "Source_PK",
-    "X_informatica_LicenseType" as "License_Type",
-    "X_informatica_LicenseNumber" as "License_Number",
+    "X_infa360_LicenseType" as "License_Type",
+    "X_infa360_LicenseNumber" as "License_Number",
     "X_country" as "Country",
     "X_state" as "State",
     "X_sample_elig" as "License_Sample_Eligibility",
@@ -20,11 +20,11 @@ select
     "X_sampleability_lastreceived_date" as "Sampleability_Last_Received_Date",
     "X_sampleability_fed_sanctions_date" as "Sampleability_Fed_Sanctions_Date",
     "X_sampleability_desigstatus" as "Sampleability_Designation_Status",
-    "X_informatica_issueDate" as "Issue_Date",
-    "X_informatica_expiryDate" as "Expiry_Date",
+    "X_infa360_issueDate" as "Issue_Date",
+    "X_infa360_expiryDate" as "Expiry_Date",
     "X_degree" as "Degree",
     "X_adjLic_expdate" as "Adj_License_Exp_Date",
     "X_AdjCode" as "Adj_Code",
     "X_AdjCodesDescriptions" as "Adj_Codes_Descriptions",
-    "X_informatica_status" as "License_Status"
+    "X_infa360_status" as "License_Status"
 from {{ source('mdm_hub', 'hcp_license') }}

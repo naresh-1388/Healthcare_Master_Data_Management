@@ -9,8 +9,8 @@
 -- as audited in the workbook).
 
 select
-    "X_informatica_TherapeuticArea_parentId" as "Global_HCP_ID",
-    "X_informatica_activeIndicator" as "Active_Indicator",
-    "X_informatica_therapeuticArea" as "Therapeutic_Area",
+    "X_infa360_TherapeuticArea_parentId" as "Global_HCP_ID",
+    "X_infa360_activeIndicator" as "Active_Indicator",
+    "X_infa360_therapeuticArea" as "Therapeutic_Area",
     "O_Load_Date" as "Load_Date"
 from {{ source('mdm_hub', 'hcp_therapeutic_area') }}
