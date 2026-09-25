@@ -10,7 +10,7 @@ USE DATABASE HMDM_DEV;
 USE SCHEMA MDM;
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "X_hco_address" VARCHAR(4000),
     "X_hco_city" VARCHAR(4000),
     "X_hco_postal_code" VARCHAR(4000),
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_ALTERNATE_IDENTIFIER (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "altValue" VARCHAR(4000),
     "IdentifierStatus" VARCHAR(4000),
     "X_informatica_identifierIssuer" VARCHAR(4000),
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_ALTERNATE_IDENTIFIER (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_NAME (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "sourceSystem" VARCHAR(4000),
     "populationName" VARCHAR(4000),
     "HCO_name" VARCHAR(4000),
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_NAME (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_PHONE (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "sourcePKey" VARCHAR(4000),
     "X_primary_phone" VARCHAR(4000),
     "X_phone_usage_type" VARCHAR(4000),
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_PHONE (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_SPECIALTY (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "sourcePKey" VARCHAR(4000),
     "X_informatica_rank" VARCHAR(4000),
     "X_informatica_Specialty" VARCHAR(4000),
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCO_SPECIALTY (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCP (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "X_transparency_reporting_name" VARCHAR(4000),
     "firstName" VARCHAR(4000),
     "middleName" VARCHAR(4000),
@@ -132,12 +132,12 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.HCP (
 -- do not fail with 'table not found'. Populate via Informatica MDM hub export.
 -- ============================================================
 
--- FIX #3: Added "Source_FK" column to all mdm_hub tables so dbt models
+-- FIX #3: Added SOURCE_FK column to all mdm_hub tables so dbt models
 -- that read from source('mdm_hub', ...) can output Source_FK for schema.yml
 -- not_null tests. Populate via Informatica MDM hub export.
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_specialty (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "X_infa360_SpecialtyType" VARCHAR(4000),
     "X_infa360_SpecialtyClass" VARCHAR(4000),
     "X_infa360_SpecialtyRank" VARCHAR(4000),
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_specialty (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_alternate_name (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "alternateNameType" VARCHAR(4000),
     "AlternateName" VARCHAR(4000),
     "X_alternate_name_status" VARCHAR(4000),
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_alternate_name (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_license (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "X_infa360_License_parentId" VARCHAR(4000),
     "sourcePKey" VARCHAR(4000),
     "X_infa360_LicenseType" VARCHAR(4000),
@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_license (
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MDM.hcp_therapeutic_area (
-    "Source_FK" VARCHAR(4000),
+    SOURCE_FK VARCHAR(4000),
     "X_infa360_TherapeuticArea_parentId" VARCHAR(4000),
     "X_infa360_activeIndicator" VARCHAR(4000),
     "X_infa360_therapeuticArea" VARCHAR(4000),

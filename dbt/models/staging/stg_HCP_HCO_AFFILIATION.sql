@@ -4,7 +4,7 @@
 -- Affiliation fields not present in mock API data -- return NULL.
 
 select
-    "iqvia_id" as "Source_FK",
+    "iqvia_id" as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "HCO_EID",
     CAST(NULL AS VARCHAR) as "Relationship_Type"
 from {{ source('staging', 'HCP_HCO_AFFILIATION') }}

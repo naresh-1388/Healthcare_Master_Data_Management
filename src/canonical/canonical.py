@@ -24,6 +24,7 @@ try:
         cluster_id,
         get_batch_status_filter,
         get_notebook_run_url,
+        get_s3_location,
         ingestion_config_tbl,
         job_id,
         run_id,

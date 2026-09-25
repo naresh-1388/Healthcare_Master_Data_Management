@@ -4,13 +4,13 @@
 
 with parsed as (
     select
-        "iqvia_id" as "Source_FK",
+        "iqvia_id" as SOURCE_FK,
         "source_name" as "Source_Name",
         PARSE_JSON("response_json") as j
     from {{ source('staging', 'HCO_IDENTIFICATION') }}
 )
 select
-    "Source_FK",
+    SOURCE_FK,
     j['Identifiers'][0]['identifierValue']::VARCHAR as "Identifier_Value",
     CAST(NULL AS VARCHAR) as "Status",
     CAST(NULL AS VARCHAR) as "Identifier_Issuer",

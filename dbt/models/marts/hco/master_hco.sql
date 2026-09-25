@@ -9,7 +9,7 @@
 -- FIX #6: HCO_NAME org identity columns now passed through from mdm_hco.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "HCO_name" as "HCO_name",
     "HCO_companyType" as "HCO_companyType",
     "HCO_X_informatica_type" as "HCO_X_informatica_type",

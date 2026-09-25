@@ -5,11 +5,11 @@
 
 with parsed as (
     select
-        "iqvia_id" as "Source_FK",
+        "iqvia_id" as SOURCE_FK,
         PARSE_JSON("response_json") as j
     from {{ source('staging', 'HCP_ADDRESS') }}
 )
 select
-    "Source_FK",
+    SOURCE_FK,
     j['HCP Address'][0]['Address Line 1']::VARCHAR as "X_hcp_address"
 from parsed

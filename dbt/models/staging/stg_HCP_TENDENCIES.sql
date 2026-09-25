@@ -4,7 +4,7 @@
 -- Tendency fields not present in mock API data -- return NULL.
 
 select
-    "iqvia_id" as "Source_FK",
+    "iqvia_id" as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "Code",
     CAST(NULL AS VARCHAR) as "Rank"
 from {{ source('staging', 'HCP_TENDENCIES') }}

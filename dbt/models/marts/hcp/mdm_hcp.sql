@@ -12,7 +12,7 @@ with base as (
 )
 
 select
-    base."Source_FK" as "Source_FK",
+    base.SOURCE_FK as SOURCE_FK,
     base."X_transparency_reporting_name" as "X_transparency_reporting_name",
     base."firstName" as "firstName",
     base."middleName" as "middleName",
@@ -41,28 +41,28 @@ select
     hcp_tendencies."Rank" as "X_informatica_tendency_rank"
 from base
 left join {{ ref('stg_HCP_ADDRESS') }} as hcp_address
-    on base."Source_FK" = hcp_address."Source_FK"
+    on base.SOURCE_FK = hcp_address.SOURCE_FK
 left join {{ ref('stg_HCP_ALTERNATE_NAME') }} as hcp_alternate_name
-    on base."Source_FK" = hcp_alternate_name."Source_FK"
+    on base.SOURCE_FK = hcp_alternate_name.SOURCE_FK
 left join {{ ref('stg_HCP_EDUCATION') }} as hcp_education
-    on base."Source_FK" = hcp_education."Source_FK"
+    on base.SOURCE_FK = hcp_education.SOURCE_FK
 left join {{ ref('stg_HCP_EMAIL') }} as hcp_email
-    on base."Source_FK" = hcp_email."Source_FK"
+    on base.SOURCE_FK = hcp_email.SOURCE_FK
 left join {{ ref('stg_HCP_HCO_AFFILIATION') }} as hcp_hco_affiliation
-    on base."Source_FK" = hcp_hco_affiliation."Source_FK"
+    on base.SOURCE_FK = hcp_hco_affiliation.SOURCE_FK
 left join {{ ref('stg_HCP_IDENTIFICATION') }} as hcp_identification
-    on base."Source_FK" = hcp_identification."Source_FK"
+    on base.SOURCE_FK = hcp_identification.SOURCE_FK
 left join {{ ref('stg_HCP_LANGUAGE') }} as hcp_language
-    on base."Source_FK" = hcp_language."Source_FK"
+    on base.SOURCE_FK = hcp_language.SOURCE_FK
 left join {{ ref('stg_HCP_LICENSE') }} as hcp_license
-    on base."Source_FK" = hcp_license."Source_FK"
+    on base.SOURCE_FK = hcp_license.SOURCE_FK
 left join {{ ref('stg_HCP_ORIGIN_UNIVERSITY') }} as hcp_origin_university
-    on base."Source_FK" = hcp_origin_university."Source_FK"
+    on base.SOURCE_FK = hcp_origin_university.SOURCE_FK
 left join {{ ref('stg_HCP_PHONE') }} as hcp_phone
-    on base."Source_FK" = hcp_phone."Source_FK"
+    on base.SOURCE_FK = hcp_phone.SOURCE_FK
 left join {{ ref('stg_HCP_SPECIALTY') }} as hcp_specialty
-    on base."Source_FK" = hcp_specialty."Source_FK"
+    on base.SOURCE_FK = hcp_specialty.SOURCE_FK
 left join {{ ref('stg_HCP_TAX') }} as hcp_tax
-    on base."Source_FK" = hcp_tax."Source_FK"
+    on base.SOURCE_FK = hcp_tax.SOURCE_FK
 left join {{ ref('stg_HCP_TENDENCIES') }} as hcp_tendencies
-    on base."Source_FK" = hcp_tendencies."Source_FK"
+    on base.SOURCE_FK = hcp_tendencies.SOURCE_FK

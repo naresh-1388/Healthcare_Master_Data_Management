@@ -5,7 +5,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "Identifier_Value" as "altValue",
     "Status" as "IdentifierStatus",
     "Identifier_Issuer" as "X_informatica_identifierIssuer",
@@ -14,5 +14,5 @@ select
     "Activation_Date" as "X_activation_date",
     "Expiration_Date" as "X_expiration_date",
     "Source_Name" as "sourceSystem",
-    "Source_FK" as "AlternateIdentifier_parentId"
+    SOURCE_FK as "AlternateIdentifier_parentId"
 from {{ ref('stg_HCO_IDENTIFICATION') }}

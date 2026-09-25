@@ -10,7 +10,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "X_infa360_SpecialtyType" as "Specialty",
     "X_infa360_SpecialtyClass" as "Specialty_Type",
     "X_infa360_SpecialtyRank" as "Specialty_Rank",

@@ -27,6 +27,7 @@ from pyspark.sql.window import Window
 try:
     from src.core.runtime_config import (
         catalog as CATALOG,
+        get_s3_location,
         util_schema as UTIL_SCHEMA,
         raw_schema as RAW_SCHEMA,
         lnd_schema as LANDING_SCHEMA,

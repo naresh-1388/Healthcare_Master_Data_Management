@@ -26,6 +26,7 @@ from pyspark.sql import functions as F
 try:
     from ..core.runtime_config import (
         get_batch_status_filter,
+        get_s3_location,
         update_batch_log_tbl,
         stg_schema,
         catalog as _catalog,

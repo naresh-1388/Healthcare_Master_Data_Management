@@ -8,7 +8,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "sourcePKey" as "sourcePKey",
     "X_primary_phone" as "X_primary_phone",
     "X_phone_usage_type" as "X_phone_usage_type",

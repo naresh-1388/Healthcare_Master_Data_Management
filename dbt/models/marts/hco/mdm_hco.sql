@@ -14,7 +14,7 @@ with base as (
 )
 
 select
-    base."Source_FK" as "Source_FK",
+    base.SOURCE_FK as SOURCE_FK,
     hco_name."HCO_Name" as "HCO_name",
     hco_name."HCO_Subtype" as "HCO_companyType",
     hco_name."HCO_Type" as "HCO_X_informatica_type",
@@ -53,12 +53,12 @@ select
     hco_tax."Tax_Number" as "X_informatica_tax_number"
 from base
 left join {{ ref('stg_HCO_NAME') }} as hco_name
-    on base."Source_FK" = hco_name."Source_FK"
+    on base.SOURCE_FK = hco_name.SOURCE_FK
 left join {{ ref('stg_HCO_ALTERNATE_NAME') }} as hco_alternate_name
-    on base."Source_FK" = hco_alternate_name."Source_FK"
+    on base.SOURCE_FK = hco_alternate_name.SOURCE_FK
 left join {{ ref('stg_HCO_EMAIL') }} as hco_email
-    on base."Source_FK" = hco_email."Source_FK"
+    on base.SOURCE_FK = hco_email.SOURCE_FK
 left join {{ ref('stg_HCO_HIERARCHY') }} as hco_hierarchy
-    on base."Source_FK" = hco_hierarchy."Source_FK"
+    on base.SOURCE_FK = hco_hierarchy.SOURCE_FK
 left join {{ ref('stg_HCO_TAX') }} as hco_tax
-    on base."Source_FK" = hco_tax."Source_FK"
+    on base.SOURCE_FK = hco_tax.SOURCE_FK

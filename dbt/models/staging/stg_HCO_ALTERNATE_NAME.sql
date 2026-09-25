@@ -4,7 +4,7 @@
 -- Alternate Name fields not present in mock API data -- return NULL.
 
 select
-    "iqvia_id" as "Source_FK",
+    "iqvia_id" as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "Alternate_Name",
     CAST(NULL AS VARCHAR) as "Alternate_Name_Type"
 from {{ source('staging', 'HCO_ALTERNATE_NAME') }}

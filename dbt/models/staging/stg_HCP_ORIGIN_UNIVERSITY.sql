@@ -4,7 +4,7 @@
 -- University fields not present in mock API data -- return NULL.
 
 select
-    "iqvia_id" as "Source_FK",
+    "iqvia_id" as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "University_Name",
     CAST(NULL AS VARCHAR) as "University_Code"
 from {{ source('staging', 'HCP_ORIGIN_UNIVERSITY') }}

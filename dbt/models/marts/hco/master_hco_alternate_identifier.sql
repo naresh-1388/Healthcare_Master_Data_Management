@@ -8,7 +8,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "altValue" as "altValue",
     "IdentifierStatus" as "IdentifierStatus",
     "X_informatica_identifierIssuer" as "X_informatica_identifierIssuer",

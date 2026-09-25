@@ -5,7 +5,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "Phone_PK" as "sourcePKey",
     "Primary_Phone" as "X_primary_phone",
     "Phone_Usage_Type" as "X_phone_usage_type",
@@ -17,5 +17,5 @@ select
     "Effective_Start_Date" as "X_effective_start_date",
     "Effective_End_Date" as "X_effective_end_date",
     "Source_Name" as "sourceSystem",
-    "Source_FK" as "X_phone_parentId"
+    SOURCE_FK as "X_phone_parentId"
 from {{ ref('stg_HCO_PHONE') }}

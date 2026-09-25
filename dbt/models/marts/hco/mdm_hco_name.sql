@@ -5,7 +5,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "Source_Name" as "sourceSystem",
     "Population_Name" as "populationName",
     "HCO_Name" as "HCO_name",

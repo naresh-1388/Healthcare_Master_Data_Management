@@ -4,7 +4,7 @@
 
 with parsed as (
     select
-        "iqvia_id" as "Source_FK",
+        "iqvia_id" as SOURCE_FK,
         "source_name" as "Source_Name",
         "organization_name" as "HCO_Name",
         "organization_type" as "HCO_Subtype",
@@ -13,7 +13,7 @@ with parsed as (
     from {{ source('staging', 'HCO_NAME') }}
 )
 select
-    "Source_FK",
+    SOURCE_FK,
     "Source_Name",
     CAST(NULL AS VARCHAR) as "Population_Name",
     "HCO_Name",

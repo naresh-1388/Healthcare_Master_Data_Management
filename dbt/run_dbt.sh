@@ -30,17 +30,22 @@ SECRET_NAME="healthcare-mdm/dev/api-snowflake"
 REGION="us-east-1"
 
 # ---- Fetch credentials from AWS Secrets Manager ----
-echo "Fetching Snowflake credentials from AWS Secrets Manager..."
+# Skip if Snowflake credentials are already set in environment
+# (e.g., when called from a Databricks notebook that fetched them via boto3).
+if [ -n "${SNOWFLAKE_ACCOUNT:-}" ] && [ -n "${SNOWFLAKE_PASSWORD:-}" ]; then
+    echo "Snowflake credentials already set in environment -- skipping AWS fetch"
+else
+    echo "Fetching Snowflake credentials from AWS Secrets Manager..."
 
-if command -v aws &>/dev/null; then
-    SECRET_JSON=$(aws secretsmanager get-secret-value \
-        --secret-id "$SECRET_NAME" \
-        --region "$REGION" \
-        --query SecretString \
-        --output text)
-elif [ -n "${DATABRICKS_TOKEN:-}" ]; then
-    # Running inside Databricks -- use boto3 via Python
-    SECRET_JSON=$(python3 -c "
+    if command -v aws &>/dev/null; then
+        SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_NAME" \
+            --region "$REGION" \
+            --query SecretString \
+            --output text)
+    elif [ -n "${DATABRICKS_TOKEN:-}" ]; then
+        # Running inside Databricks -- use boto3 via Python
+        SECRET_JSON=$(python3 -c "
 import boto3, json
 from pyspark.dbutils import DBUtils
 from pyspark.sql import SparkSession
@@ -56,16 +61,20 @@ sm = session.client('secretsmanager')
 resp = sm.get_secret_value(SecretId='$SECRET_NAME')
 print(resp['SecretString'])
 ")
-else
-    echo "ERROR: AWS CLI not found and not running in Databricks."
-    echo "Install AWS CLI or run from Databricks notebook."
-    exit 1
+    else
+        echo "ERROR: AWS CLI not found and not running in Databricks."
+        echo "Install AWS CLI or run from Databricks notebook."
+        echo "Or set SNOWFLAKE_* environment variables before calling this script."
+        exit 1
+    fi
 fi
 
 # ---- Parse and export as environment variables ----
-# Use jq if available; fall back to Python (jq is not guaranteed on
-# Databricks Serverless compute).
-if command -v jq &>/dev/null; then
+# Only parse if credentials were fetched from AWS (not pre-set in env).
+if [ -z "${SNOWFLAKE_ACCOUNT:-}" ] || [ -z "${SNOWFLAKE_PASSWORD:-}" ]; then
+    # Use jq if available; fall back to Python (jq is not guaranteed on
+    # Databricks Serverless compute).
+    if command -v jq &>/dev/null; then
     export SNOWFLAKE_ACCOUNT=$(echo "$SECRET_JSON" | jq -r '.snowflake_account' | sed 's/\.snowflakecomputing\.com//')
     export SNOWFLAKE_USER=$(echo "$SECRET_JSON" | jq -r '.snowflake_user')
     export SNOWFLAKE_PASSWORD=$(echo "$SECRET_JSON" | jq -r '.snowflake_password')
@@ -84,6 +93,7 @@ for key in ['account', 'user', 'password', 'warehouse', 'database', 'schema']:
         val = account
     print(f\"export SNOWFLAKE_{key.upper()}='{val}'\")
 ")"
+    fi
 fi
 export SNOWFLAKE_ROLE="${SNOWFLAKE_ROLE:-HMDM_DEV_ROLE}"
 

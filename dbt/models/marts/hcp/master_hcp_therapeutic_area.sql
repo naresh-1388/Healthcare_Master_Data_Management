@@ -10,7 +10,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "X_infa360_TherapeuticArea_parentId" as "Global_HCP_ID",
     "X_infa360_activeIndicator" as "Active_Indicator",
     "X_infa360_therapeuticArea" as "Therapeutic_Area",

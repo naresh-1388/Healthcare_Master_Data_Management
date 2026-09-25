@@ -71,7 +71,8 @@ try:
         dqm_config_tbl,
         dqm_log_tbl,
         dqm_reject_tbl,
-        batch_log_tbl,
+        get_s3_location,
+            batch_log_tbl,
         log_tbl_nm,
     )
 except Exception:

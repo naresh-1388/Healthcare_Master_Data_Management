@@ -41,6 +41,7 @@ clean-targets:
 
 models:
   healthcare_mdm:
+    +quote_columns: true
     staging:
       +materialized: view
       +schema: staging

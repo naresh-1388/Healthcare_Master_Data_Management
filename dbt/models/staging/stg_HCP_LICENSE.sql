@@ -6,7 +6,7 @@
 -- Output column X_informatica_License matches what mdm_hcp.sql expects.
 -- Add a NULL Source_FK so the LEFT JOIN in mdm_hcp.sql does not fail.
 select
-    CAST(NULL AS VARCHAR) as "Source_FK",
+    CAST(NULL AS VARCHAR) as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "X_informatica_License"
 from {{ source('staging', 'HCP_LICENSE') }}
 where 1 = 0

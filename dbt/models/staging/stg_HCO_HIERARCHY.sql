@@ -4,7 +4,7 @@
 -- Hierarchy fields not present in mock API data -- return NULL.
 
 select
-    "iqvia_id" as "Source_FK",
+    "iqvia_id" as SOURCE_FK,
     CAST(NULL AS VARCHAR) as "Parent_Organization_EID",
     CAST(NULL AS VARCHAR) as "Relationship_Type"
 from {{ source('staging', 'HCO_HIERARCHY') }}

@@ -10,7 +10,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "X_infa360_License_parentId" as "Global_HCP_ID",
     "sourcePKey" as "Source_PK",
     "X_infa360_LicenseType" as "License_Type",

@@ -8,7 +8,7 @@
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
-    "Source_FK" as "Source_FK",
+    SOURCE_FK as SOURCE_FK,
     "X_transparency_reporting_name" as "Transparency_Reporting_Name",
     "firstName" as "First_Name",
     "middleName" as "Middle_Name",
