@@ -231,6 +231,33 @@ archive_path = os.getenv(
 print(f"Archive Path : {archive_path}")
 
 
+# ------------------------------------------------------------
+# S3 Table Location Helper
+# ------------------------------------------------------------
+# All Databricks UC managed tables are stored in the project S3
+# bucket with the path pattern: s3://{bucket}/{schema}/{table}
+# Use get_s3_location() in every saveAsTable call to ensure
+# tables go to the project bucket, not Databricks default storage.
+# Example: df.write.option("path", get_s3_location(target_table)).saveAsTable(target_table)
+
+def get_s3_location(full_table_name):
+    """
+    Return the S3 LOCATION for a Databricks UC table.
+
+    Args:
+        full_table_name: Qualified table name like 'hmdm_dev.landing.hcp_name'
+
+    Returns:
+        S3 path like 's3://healthcare-master-data-management/landing/hcp_name'
+    """
+    parts = str(full_table_name).split(".")
+    if len(parts) >= 3:
+        schema_name = parts[1]
+        table_name = parts[2]
+        return f"s3://{s3_bucket}/{schema_name}/{table_name}"
+    return None
+
+
 # ============================================================
 # Schema Configuration
 # ============================================================

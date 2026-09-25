@@ -135,13 +135,12 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # COMMAND ----------
 
 # DBTITLE 1,Display Current Infrastructure
-# MAGIC %sql
-# MAGIC -- Verify schemas exist
-# MAGIC -- FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
-# MAGIC spark.sql(f"SHOW SCHEMAS IN {catalog}").show()
-# MAGIC
-# MAGIC -- Check MDM tables (input)
-# MAGIC spark.sql(f"SHOW TABLES IN {catalog}.mdm").show()
+# Verify schemas exist
+# FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
+spark.sql(f"SHOW SCHEMAS IN {catalog}").show()
+
+# Check MDM tables (input)
+spark.sql(f"SHOW TABLES IN {catalog}.mdm").show()
 
 # COMMAND ----------
 
@@ -154,13 +153,12 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # COMMAND ----------
 
 # DBTITLE 1,Verify Master Schema
-# MAGIC %sql
-# MAGIC -- Create MASTER schema if not exists
-# MAGIC -- FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
-# MAGIC spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.master COMMENT 'Master layer - golden records for consumption'")
-# MAGIC
-# MAGIC -- Show MASTER tables (after egress runs)
-# MAGIC spark.sql(f"SHOW TABLES IN {catalog}.master").show()
+# Create MASTER schema if not exists
+# FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.master COMMENT 'Master layer - golden records for consumption'")
+
+# Show MASTER tables (after egress runs)
+spark.sql(f"SHOW TABLES IN {catalog}.master").show()
 
 # COMMAND ----------
 

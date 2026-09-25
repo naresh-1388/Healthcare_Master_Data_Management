@@ -67,34 +67,28 @@ CREATE TABLE IF NOT EXISTS HMDM_DEV.MASTER.HCO_ALTERNATE_IDENTIFIER LIKE HMDM_DE
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MASTER.HCO_PHONE LIKE HMDM_DEV.MASTER.HCO;
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MASTER.HCO_SPECIALTY LIKE HMDM_DEV.MASTER.HCO;
 
--- Tables kept from original DDL (not synced from Databricks)
-
+-- FIX (Sep 25 2026): MASTER.HCP DDL updated to match actual Databricks schema.
+-- Was old schema (SOURCE_ID, First_Name, etc.) but Databricks egress writes
+-- individualEid, firstName, etc. Old DDL caused schema-mismatch recreate on every sync.
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MASTER.HCP (
-    "SOURCE_ID" VARCHAR(200),
-    "Transparency_Reporting_Name" VARCHAR(4000),
-    "First_Name" VARCHAR(4000),
-    "Middle_Name" VARCHAR(4000),
-    "Last_Name" VARCHAR(4000),
-    "Full_Name" VARCHAR(4000),
-    "Gender" VARCHAR(4000),
-    "HCP_Type" VARCHAR(4000),
-    "Status" VARCHAR(4000),
-    "Title" VARCHAR(4000),
-    "Prefix_Name" VARCHAR(4000),
-    "Address" VARCHAR(4000),
-    "Phone" VARCHAR(4000),
-    "Qualification" VARCHAR(4000),
-    "DEA_Number" VARCHAR(4000),
-    "Alternate_Identifier" VARCHAR(4000),
-    "Email" VARCHAR(4000),
-    "HCO_Affiliation_EID" VARCHAR(4000),
-    "HCO_Affiliation_Type" VARCHAR(4000),
-    "Language" VARCHAR(4000),
-    "Origin_University_Name" VARCHAR(4000),
-    "Origin_University_Code" VARCHAR(4000),
-    "Tendency_Code" VARCHAR(4000),
-    "Tendency_Rank" VARCHAR(4000),
-    "_PUBLISHED_AT" TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+    "individualEid" VARCHAR(4000),
+    "firstName" VARCHAR(4000),
+    "middleName" VARCHAR(4000),
+    "lastName" VARCHAR(4000),
+    "countryCode" VARCHAR(4000),
+    "fullName" VARCHAR(4000),
+    "gender" VARCHAR(4000),
+    "prefixName" VARCHAR(4000),
+    "X_transparency_reporting_name" VARCHAR(4000),
+    "X_hcp_status" VARCHAR(4000),
+    "X_informatica_type" VARCHAR(4000),
+    "X_iqvia_title" VARCHAR(4000),
+    "source_name" VARCHAR(4000),
+    "Batch_ID" VARCHAR(4000),
+    "Load_Date" TIMESTAMP_NTZ,
+    "MDM_INGRESS_PROCESSED_AT" TIMESTAMP_NTZ,
+    "SOURCE_SYSTEM_NAME" VARCHAR(4000),
+    "EGRESS_LOAD_DATE" TIMESTAMP_NTZ
 );
 
 CREATE TABLE IF NOT EXISTS HMDM_DEV.MASTER.HCP_LICENSE (

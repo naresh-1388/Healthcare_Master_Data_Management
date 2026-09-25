@@ -39,7 +39,7 @@ try:
     from ..core.logging_utils import log_event_detail, logger
     from ..core.data_io import send_email
 except ImportError:
-    from core.runtime_config import catalog, env, util_schema
+    from core.runtime_config import catalog, env, util_schema, get_s3_location
     from core.logging_utils import log_event_detail, logger
     from core.data_io import send_email
 
@@ -489,7 +489,7 @@ def run_api_to_raw(
                     continue
                 
                 # Write to Delta
-                df.write.format("delta").mode("append").saveAsTable(target_table)
+                df.write.format("delta").mode("append").option("path", get_s3_location(target_table)).saveAsTable(target_table)
                 
                 logger.info(f"Successfully wrote {entity_id} to {target_table}")
                 

@@ -80,6 +80,7 @@ except Exception:
             dqm_config_tbl,
             dqm_log_tbl,
             dqm_reject_tbl,
+            get_s3_location,
             batch_log_tbl,
             log_tbl_nm,
         )
@@ -1764,6 +1765,7 @@ def main_data_quality_pipeline(
         dq_log_df.write \
             .format("delta") \
             .mode("append") \
+            .option("path", get_s3_location(dqm_log_tbl)) \
             .saveAsTable(dqm_log_tbl)
 
         if rejected_count > 0:
@@ -1828,6 +1830,7 @@ def main_data_quality_pipeline(
             reject_df.write \
                 .format("delta") \
                 .mode("append") \
+                .option("path", get_s3_location(dqm_reject_tbl)) \
                 .saveAsTable(dqm_reject_tbl)
 
         if skip_batch_update:

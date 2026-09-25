@@ -19,6 +19,7 @@ try:
         archive_path,
         batch_log_tbl,
         catalog,
+        get_s3_location,
         util_schema,
         cluster_id,
         email_config,
@@ -41,6 +42,7 @@ except ImportError:
     from core.runtime_config import (
         DEFAULT_ALERT_EMAILS,
         archive_path,
+        get_s3_location,
         util_schema,
         batch_log_tbl,
         catalog,
@@ -822,6 +824,8 @@ def process_files_from_metadata(
 
             df.write.format("delta").mode(
                 load_mode
+            ).option(
+                "path", get_s3_location(target_table_full_name)
             ).saveAsTable(
                 target_table_full_name
             )

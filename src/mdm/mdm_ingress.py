@@ -33,6 +33,7 @@ try:
 except ImportError:
     from core.runtime_config import (
         get_batch_status_filter,
+        get_s3_location,
         update_batch_log_tbl,
         stg_schema,
         catalog as _catalog,
@@ -1350,7 +1351,7 @@ def prepare_hcp_ingress(
 
 
 # ---------------------------------------------------------------------------
-# HCO ingress (simple -- uses DEV_HCO_FIELD_MAPPING like HCP)
+# HCO ingress (simple — uses DEV_HCO_FIELD_MAPPING like HCP)
 # ---------------------------------------------------------------------------
 
 def prepare_hco_simple_ingress(
@@ -1401,7 +1402,7 @@ def prepare_hco_simple_ingress(
 
 
 # ---------------------------------------------------------------------------
-# HCO ingress (legacy -- uses HCO_INGRESS_MAPPING column-level mapping)
+# HCO ingress (legacy — uses HCO_INGRESS_MAPPING column-level mapping)
 # ---------------------------------------------------------------------------
 
 def prepare_hco_ingress(
@@ -1572,6 +1573,7 @@ def write_prepared_ingress(
             .format("delta")
             .mode("append")
             .option("mergeSchema", "true")
+            .option("path", get_s3_location(qualified_target))
             .saveAsTable(qualified_target)
         )
 

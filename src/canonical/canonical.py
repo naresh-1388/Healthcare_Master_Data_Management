@@ -43,6 +43,7 @@ except ImportError:
         cluster_id,
         get_batch_status_filter,
         get_notebook_run_url,
+        get_s3_location,
         ingestion_config_tbl,
         job_id,
         run_id,
@@ -965,6 +966,7 @@ def write_to_target_table(
                     "overwriteSchema",
                     "true",
                 )
+                .option("path", get_s3_location(target_table))
                 .saveAsTable(
                     target_table
                 )
@@ -996,6 +998,7 @@ def write_to_target_table(
                     "mergeSchema",
                     "true",
                 )
+                .option("path", get_s3_location(target_table))
                 .saveAsTable(
                     target_table
                 )

@@ -35,6 +35,7 @@ except Exception:
     try:
         from core.runtime_config import (
             catalog as CATALOG,
+            get_s3_location,
             util_schema as UTIL_SCHEMA,
             raw_schema as RAW_SCHEMA,
             lnd_schema as LANDING_SCHEMA,
@@ -943,6 +944,7 @@ def write_standardization_table(
         output_df.write
         .format("delta")
         .mode(load_mode)
+        .option("path", get_s3_location(std_table))
         .saveAsTable(std_table)
     )
 
@@ -1148,6 +1150,7 @@ def write_log(
         log_df.write \
             .format("delta") \
             .mode("append") \
+            .option("path", get_s3_location(LOG_TBL)) \
             .saveAsTable(LOG_TBL)
 
         print(

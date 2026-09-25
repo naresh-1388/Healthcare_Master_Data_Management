@@ -24,15 +24,15 @@ from pyspark.sql import SparkSession
 # ---------------------------------------------------------------------------
 
 try:
-    from .runtime_config import spark, log_tbl_nm
+    from .runtime_config import spark, log_tbl_nm, get_s3_location
 
 except ImportError:
     try:
-        from runtime_config import spark, log_tbl_nm
+        from runtime_config import spark, log_tbl_nm, get_s3_location
 
     except ImportError:
         # Script-mode fallback when this file is executed outside the package.
-        from core.runtime_config import spark, log_tbl_nm
+        from core.runtime_config import spark, log_tbl_nm, get_s3_location
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +145,7 @@ def create_log_tables(log_table_name):
                 user_id STRING,
                 cluster_id STRING
             )
+            LOCATION '{get_s3_location(log_table_name)}'
             """
         )
 

@@ -143,6 +143,76 @@ for sid in source_identifiers:
 
 # COMMAND ----------
 
+# DBTITLE 1,Self-Healing: Ensure Canonical Mappings
+# ============================================================================
+# SELF-HEALING: Ensure ctl_can_mapg has complete column mappings.
+# The hco_name entity was missing organization_name and organization_type
+# mappings in the control table, causing DQ to skip hco_name (null_check
+# on organization_name failed because the column was not carried to
+# canonical). This cell inserts any missing mappings idempotently
+# so the pipeline is self-correcting across branches and fresh setups.
+# Uses pure SQL INSERT ... WHERE NOT EXISTS for atomic idempotency.
+# ============================================================================
+
+# Ensure catalog is available (fallback if imports cell was skipped)
+try:
+    catalog
+except NameError:
+    import sys, os
+    src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+    from core.runtime_config import catalog
+
+# Idempotent INSERT: only inserts if the mapping does NOT already exist
+# organization_name mapping for hco_name
+spark.sql(f"""
+    INSERT INTO {catalog}.util.ctl_can_mapg
+    (source_identifier, source_system_name, src_tbl_nm, src_schema, src_attribute,
+     tgt_tbl_nm, tgt_schema, tgt_attribute, join_condition, module, batch_id)
+    SELECT
+        'hco_name', 'IQVIA_API', 'hco_name', 'landing', 'organization_name',
+        'hco_name_canonical', 'canonical', 'organization_name', NULL, 'Canonical', NULL
+    WHERE NOT EXISTS (
+        SELECT 1 FROM {catalog}.util.ctl_can_mapg
+        WHERE LOWER(TRIM(source_identifier)) = 'hco_name'
+          AND LOWER(TRIM(source_system_name)) = 'iqvia_api'
+          AND LOWER(TRIM(src_tbl_nm)) = 'hco_name'
+          AND LOWER(TRIM(src_attribute)) = 'organization_name'
+          AND LOWER(TRIM(module)) = 'canonical'
+    )
+""")
+
+# organization_type mapping for hco_name
+spark.sql(f"""
+    INSERT INTO {catalog}.util.ctl_can_mapg
+    (source_identifier, source_system_name, src_tbl_nm, src_schema, src_attribute,
+     tgt_tbl_nm, tgt_schema, tgt_attribute, join_condition, module, batch_id)
+    SELECT
+        'hco_name', 'IQVIA_API', 'hco_name', 'landing', 'organization_type',
+        'hco_name_canonical', 'canonical', 'organization_type', NULL, 'Canonical', NULL
+    WHERE NOT EXISTS (
+        SELECT 1 FROM {catalog}.util.ctl_can_mapg
+        WHERE LOWER(TRIM(source_identifier)) = 'hco_name'
+          AND LOWER(TRIM(source_system_name)) = 'iqvia_api'
+          AND LOWER(TRIM(src_tbl_nm)) = 'hco_name'
+          AND LOWER(TRIM(src_attribute)) = 'organization_type'
+          AND LOWER(TRIM(module)) = 'canonical'
+    )
+""")
+
+# Verify hco_name has all expected mappings
+_hco_count = spark.sql(f"""
+    SELECT COUNT(*) as cnt
+    FROM {catalog}.util.ctl_can_mapg
+    WHERE LOWER(TRIM(src_tbl_nm)) = 'hco_name'
+      AND LOWER(TRIM(source_system_name)) = 'iqvia_api'
+""").collect()[0]['cnt']
+
+print(f"Self-healing complete: hco_name has {_hco_count} canonical mappings in ctl_can_mapg")
+
+# COMMAND ----------
+
 # DBTITLE 1,Run Canonical Pipeline
 # MAGIC %md #### 3. Run Canonical Pipeline
 # MAGIC

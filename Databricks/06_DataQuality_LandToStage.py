@@ -111,7 +111,7 @@ importlib.reload(dq.data_quality)
 importlib.reload(core.runtime_config)
 
 from dq.data_quality import main_data_quality_pipeline, get_rules_for_source, get_rules
-from core.runtime_config import catalog, env, get_notebook_run_url
+from core.runtime_config import catalog, env, get_notebook_run_url, get_s3_location
 
 # COMMAND ----------
 
@@ -271,10 +271,10 @@ for bare_table in bare_source_tables:
         staging_cols = [c for c in passed_df.columns if c not in DQ_METADATA_COLS]
         staging_df = passed_df.select(*staging_cols)
         
-        (spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table_fqn} USING DELTA AS SELECT * FROM {source_schema}.{bare_table}_canonical WHERE 1=0")
+        (spark.sql(f"CREATE TABLE IF NOT EXISTS {target_table_fqn} USING DELTA LOCATION '{get_s3_location(target_table_fqn)}' AS SELECT * FROM {source_schema}.{bare_table}_canonical WHERE 1=0")
          if not spark.catalog.tableExists(target_table_fqn) else None)
         
-        staging_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(target_table_fqn)
+        staging_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").option("path", get_s3_location(target_table_fqn)).saveAsTable(target_table_fqn)
         print(f"  SUCCESS: {bare_table} -> {target_table_fqn} ({passed_count} rows)")
         succeeded += 1
     except Exception as exc:  # noqa: BLE001

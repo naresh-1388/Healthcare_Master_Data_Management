@@ -285,6 +285,7 @@ def write_egress(
         .format("delta")
         .mode(mode)
         .option("mergeSchema", "true")
+        .option("path", runtime_config.get_s3_location(target_table))
         .saveAsTable(target_table)
     )
 
