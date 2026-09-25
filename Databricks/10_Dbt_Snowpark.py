@@ -137,7 +137,7 @@ def _get_snowflake_env():
         "SNOWFLAKE_WAREHOUSE": secret["snowflake_warehouse"],
         "SNOWFLAKE_DATABASE": secret["snowflake_database"],
         "SNOWFLAKE_SCHEMA": secret["snowflake_schema"],
-        "SNOWFLAKE_ROLE": secret.get("snowflake_role", "HMDM_DEV_ROLE"),
+        "SNOWFLAKE_ROLE": secret["snowflake_role"],
     }
 
 # Build env for dbt subprocess: inherit parent env + add Snowflake creds.
@@ -213,7 +213,7 @@ def _get_snowflake_env():
         "SNOWFLAKE_WAREHOUSE": secret["snowflake_warehouse"],
         "SNOWFLAKE_DATABASE": secret["snowflake_database"],
         "SNOWFLAKE_SCHEMA": secret["snowflake_schema"],
-        "SNOWFLAKE_ROLE": secret.get("snowflake_role", "HMDM_DEV_ROLE"),
+        "SNOWFLAKE_ROLE": secret["snowflake_role"],
     }
 
 env = os.environ.copy()
@@ -306,7 +306,7 @@ def _get_snowflake_env():
         "SNOWFLAKE_WAREHOUSE": secret["snowflake_warehouse"],
         "SNOWFLAKE_DATABASE": secret["snowflake_database"],
         "SNOWFLAKE_SCHEMA": secret["snowflake_schema"],
-        "SNOWFLAKE_ROLE": secret.get("snowflake_role", "HMDM_DEV_ROLE"),
+        "SNOWFLAKE_ROLE": secret["snowflake_role"],
     }
 
 # Build env for Snowpark subprocess: inherit parent env + add Snowflake creds.
