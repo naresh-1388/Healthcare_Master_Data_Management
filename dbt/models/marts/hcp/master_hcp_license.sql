@@ -7,8 +7,10 @@
 -- table (business-friendly names on the HCP side, e.g. firstName ->
 -- First_Name; pure passthrough on the HCO side - both preserved exactly
 -- as audited in the workbook).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "X_infa360_License_parentId" as "Global_HCP_ID",
     "sourcePKey" as "Source_PK",
     "X_infa360_LicenseType" as "License_Type",

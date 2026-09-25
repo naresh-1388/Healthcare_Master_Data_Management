@@ -2,8 +2,10 @@
 -- Straight column-level mapping from stg_hco_specialty, matching the
 -- Stg_MDM_Ingress sheet's src_attribute -> tgt_attribute pairs exactly
 -- (one dbt source table -> one MDM target table, no join needed).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "Specialty_PK" as "sourcePKey",
     "Specialty_Rank" as "X_informatica_rank",
     "Specialty" as "X_informatica_Specialty",

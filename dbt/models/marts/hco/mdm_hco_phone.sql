@@ -2,8 +2,10 @@
 -- Straight column-level mapping from stg_hco_phone, matching the
 -- Stg_MDM_Ingress sheet's src_attribute -> tgt_attribute pairs exactly
 -- (one dbt source table -> one MDM target table, no join needed).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "Phone_PK" as "sourcePKey",
     "Primary_Phone" as "X_primary_phone",
     "Phone_Usage_Type" as "X_phone_usage_type",

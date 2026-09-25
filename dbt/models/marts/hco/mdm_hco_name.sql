@@ -2,8 +2,10 @@
 -- Straight column-level mapping from stg_hco_name, matching the
 -- Stg_MDM_Ingress sheet's src_attribute -> tgt_attribute pairs exactly
 -- (one dbt source table -> one MDM target table, no join needed).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "Source_Name" as "sourceSystem",
     "Population_Name" as "populationName",
     "HCO_Name" as "HCO_name",

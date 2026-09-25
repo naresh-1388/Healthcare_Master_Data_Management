@@ -5,12 +5,14 @@
 -- to every other contributing table on Source_FK - this mirrors how
 -- Informatica MDM lands multiple attribute groups directly onto one
 -- base object.
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 with base as (
     select * from {{ ref('stg_HCP_NAME') }}
 )
 
 select
+    base."Source_FK" as "Source_FK",
     base."X_transparency_reporting_name" as "X_transparency_reporting_name",
     base."firstName" as "firstName",
     base."middleName" as "middleName",

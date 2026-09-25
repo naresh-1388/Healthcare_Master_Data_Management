@@ -36,7 +36,16 @@
 #   HCP  -> 5 HCP egress groups -> MASTER.HCP
 #   HCO  -> 5 HCO egress groups -> MASTER.HCO
 #   BOTH -> 10 egress groups -> MASTER.HCP and MASTER.HCO
+# FIX #9: Egress group paths now use {catalog} variable instead of
+# hardcoded HMDM_DEV for multi-environment support.
 # ============================================================
+
+# Import catalog from runtime_config (needed for egress group paths).
+import sys, os
+_src_path = os.path.abspath(os.path.join(os.getcwd(), "..", "src"))
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
+from core.runtime_config import catalog
 
 # Create dropdown widgets
 dbutils.widgets.dropdown("source_system_name", "IQVIA_API", ["IQVIA_API"], "Source System")
@@ -56,18 +65,18 @@ write_mode = dbutils.widgets.get("write_mode")
 # Mirrors the MDM_HUB_Egress-HCP_Master / MDM_HUB_Egress-HCO_Master sheets:
 # each (source_table, target_table) pair below is one egress group.
 HCP_EGRESS_GROUPS = [
-    ("HMDM_DEV.MDM.HCP",                 "HMDM_DEV.MASTER.HCP"),
-    ("HMDM_DEV.MDM.HCP_SPECIALTY",       "HMDM_DEV.MASTER.HCP_SPECIALTY"),
-    ("HMDM_DEV.MDM.HCP_ALTERNATE_NAME",  "HMDM_DEV.MASTER.HCP_ALTERNATE_NAME"),
-    ("HMDM_DEV.MDM.HCP_EDUCATION",       "HMDM_DEV.MASTER.HCP_EDUCATION"),
-    ("HMDM_DEV.MDM.HCP_IDENTIFICATION", "HMDM_DEV.MASTER.HCP_IDENTIFICATION"),
+    (f"{catalog}.MDM.HCP",                 f"{catalog}.MASTER.HCP"),
+    (f"{catalog}.MDM.HCP_SPECIALTY",       f"{catalog}.MASTER.HCP_SPECIALTY"),
+    (f"{catalog}.MDM.HCP_ALTERNATE_NAME",  f"{catalog}.MASTER.HCP_ALTERNATE_NAME"),
+    (f"{catalog}.MDM.HCP_EDUCATION",       f"{catalog}.MASTER.HCP_EDUCATION"),
+    (f"{catalog}.MDM.HCP_IDENTIFICATION", f"{catalog}.MASTER.HCP_IDENTIFICATION"),
 ]
 HCO_EGRESS_GROUPS = [
-    ("HMDM_DEV.MDM.HCO",                       "HMDM_DEV.MASTER.HCO"),
-    ("HMDM_DEV.MDM.HCO_NAME",                  "HMDM_DEV.MASTER.HCO_NAME"),
-    ("HMDM_DEV.MDM.HCO_ALTERNATE_IDENTIFIER",  "HMDM_DEV.MASTER.HCO_ALTERNATE_IDENTIFIER"),
-    ("HMDM_DEV.MDM.HCO_PHONE",                 "HMDM_DEV.MASTER.HCO_PHONE"),
-    ("HMDM_DEV.MDM.HCO_SPECIALTY",             "HMDM_DEV.MASTER.HCO_SPECIALTY"),
+    (f"{catalog}.MDM.HCO",                       f"{catalog}.MASTER.HCO"),
+    (f"{catalog}.MDM.HCO_NAME",                  f"{catalog}.MASTER.HCO_NAME"),
+    (f"{catalog}.MDM.HCO_ALTERNATE_IDENTIFIER",  f"{catalog}.MASTER.HCO_ALTERNATE_IDENTIFIER"),
+    (f"{catalog}.MDM.HCO_PHONE",                 f"{catalog}.MASTER.HCO_PHONE"),
+    (f"{catalog}.MDM.HCO_SPECIALTY",             f"{catalog}.MASTER.HCO_SPECIALTY"),
 ]
 
 # Build egress groups based on widget selection
@@ -128,10 +137,11 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # DBTITLE 1,Display Current Infrastructure
 # MAGIC %sql
 # MAGIC -- Verify schemas exist
-# MAGIC SHOW SCHEMAS IN HMDM_DEV;
+# MAGIC -- FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
+# MAGIC spark.sql(f"SHOW SCHEMAS IN {catalog}").show()
 # MAGIC
 # MAGIC -- Check MDM tables (input)
-# MAGIC SHOW TABLES IN HMDM_DEV.mdm;
+# MAGIC spark.sql(f"SHOW TABLES IN {catalog}.mdm").show()
 
 # COMMAND ----------
 
@@ -146,11 +156,11 @@ from core.runtime_config import catalog, env, get_notebook_run_url
 # DBTITLE 1,Verify Master Schema
 # MAGIC %sql
 # MAGIC -- Create MASTER schema if not exists
-# MAGIC CREATE SCHEMA IF NOT EXISTS HMDM_DEV.master
-# MAGIC COMMENT 'Master layer - golden records for consumption';
+# MAGIC -- FIX #9: Uses catalog variable instead of hardcoded HMDM_DEV.
+# MAGIC spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.master COMMENT 'Master layer - golden records for consumption'")
 # MAGIC
 # MAGIC -- Show MASTER tables (after egress runs)
-# MAGIC SHOW TABLES IN HMDM_DEV.master;
+# MAGIC spark.sql(f"SHOW TABLES IN {catalog}.master").show()
 
 # COMMAND ----------
 
@@ -192,10 +202,14 @@ hco_g = len(HCO_EGRESS_GROUPS) if SELECTED_ENTITY in ("HCO", "BOTH") else 0
 print(f"Egress Groups: {len(egress_groups)} ({hcp_g} HCP + {hco_g} HCO)")
 print("=" * 60)
 
-# Reset egress batch status to 'N' for this source system so we can reprocess
+# Reset egress AND Snowflake sync batch status to 'N' so both stages reprocess.
+# This prevents stale Snowflake data when Databricks master is updated (FIX #7).
+# When egress replays with new data, Snowflake sync must also replay (not skip
+# based on old snowflake_sync_status='Y').
 spark.sql(f"""
     UPDATE {catalog}.util.ctl_batch_log_tbl
-    SET egress_status = 'N'
+    SET egress_status = 'N',
+        snowflake_sync_status = 'N'
     WHERE source_system_name = '{source_system_name}'
       AND batch_id = (
           SELECT MAX(batch_id)
@@ -203,7 +217,7 @@ spark.sql(f"""
           WHERE source_system_name = '{source_system_name}'
       )
 """)
-print(f"Egress batch status reset to 'N' for latest batch ({source_system_name})")
+print(f"Egress and Snowflake sync status reset to 'N' for latest batch ({source_system_name})")
 
 # Resolve batch_id if not provided via widget.
 # This bypasses the module's get_latest_eligible_batch() which uses
@@ -226,10 +240,14 @@ rows_written = 0
 hcp_rows = 0
 hco_rows = 0
 for source_table, target_table in egress_groups:
-    # Skip MDM source tables that don't exist yet (e.g. child tables not created)
+    # FIX #4: Expected MDM source table missing is a FAILURE (not silent SKIP).
+    # HCP/HCO egress groups are defined explicitly -- if a table is in the list,
+    # it's expected to exist. If it doesn't, that's an upstream pipeline failure.
     if not spark.catalog.tableExists(source_table):
         print(f"\n--- Egress: {source_table} -> {target_table} ---")
-        print(f"SKIPPED: source table does not exist")
+        error_msg = f"Expected MDM source table does not exist (upstream pipeline failure)"
+        print(f"ERROR: {error_msg}")
+        failures.append((source_table, error_msg))
         continue
     try:
         print(f"\n--- Egress: {source_table} -> {target_table} ---")
@@ -303,13 +321,14 @@ print(f"  Total: {len(egress_groups)} groups, {rows_written} rows")
 
 # DBTITLE 1,Show Master Row Counts
 # Show row counts for all MASTER tables, grouped by entity type
-master_tables = spark.sql("SHOW TABLES IN hmdm_dev.master").collect()
+# FIX #9: Use {catalog} variable instead of hardcoded hmdm_dev.
+master_tables = spark.sql(f"SHOW TABLES IN {catalog}.master").collect()
 
 results = []
 for row in master_tables:
     tbl = row.tableName
     try:
-        cnt = spark.sql(f"SELECT COUNT(*) as cnt FROM hmdm_dev.master.{tbl}").collect()[0]['cnt']
+        cnt = spark.sql(f"SELECT COUNT(*) as cnt FROM {catalog}.master.{tbl}").collect()[0]['cnt']
     except Exception:
         cnt = 0
     entity = "HCP" if tbl.startswith("hcp") else "HCO" if tbl.startswith("hco") else "UNKNOWN"

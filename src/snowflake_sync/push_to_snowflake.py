@@ -20,7 +20,8 @@ Credentials:
       - Databricks service credential: 'healthcare_mdm_secrets_credential'
       - AWS Secrets Manager secret: 'healthcare-mdm/dev/api-snowflake'
       - Keys: snowflake_user, snowflake_password, snowflake_account,
-              snowflake_warehouse, snowflake_database, snowflake_schema
+              snowflake_warehouse, snowflake_database, snowflake_schema,
+              snowflake_role
 
     No credentials are hardcoded in this file.
 """
@@ -103,11 +104,17 @@ def get_snowflake_credentials() -> Optional[Dict[str, str]]:
       - Databricks service credential 'healthcare_mdm_secrets_credential'
       - AWS Secrets Manager secret 'healthcare-mdm/dev/api-snowflake'
       - Keys: snowflake_user, snowflake_password, snowflake_account,
-              snowflake_warehouse, snowflake_database, snowflake_schema
+              snowflake_warehouse, snowflake_database, snowflake_schema,
+              snowflake_role
 
     Returns:
         Dict with keys: account, user, password, warehouse, database,
-        schema.  Or None if credentials cannot be retrieved.
+        schema, role.  Or None if credentials cannot be retrieved.
+
+    FIX #5: snowflake_role is now read from the secret and passed to the
+    Snowflake connector. Previously role was always empty string, meaning
+    the connector used the user's default role (often ACCOUNTADMIN) instead
+    of the intended HMDM_DEV_ROLE.
     """
     try:
         import boto3
@@ -137,6 +144,9 @@ def get_snowflake_credentials() -> Optional[Dict[str, str]]:
         warehouse = secret["snowflake_warehouse"]
         database = secret["snowflake_database"]
         schema = secret["snowflake_schema"]
+        # FIX #5: Read snowflake_role from secret so the connector uses the
+        # configured role (e.g. HMDM_DEV_ROLE) instead of the user default.
+        role = secret.get("snowflake_role", "")
 
         creds = {
             "account": account,
@@ -145,6 +155,7 @@ def get_snowflake_credentials() -> Optional[Dict[str, str]]:
             "warehouse": warehouse,
             "database": database,
             "schema": schema,
+            "role": role,
         }
 
         print("Snowflake credentials: loaded from AWS Secrets Manager")
@@ -279,9 +290,12 @@ def _sync_one_table(
             conn.commit()
             print(f"    Target cleared: {sf_full}")
         except Exception as clear_err:
-            # Do NOT silently swallow delete failure -- log it so the operator
-            # knows the Snowflake target may contain stale data.
-            print(f"    WARNING: Could not clear {sf_full}: {clear_err}")
+            # FIX #7: Zero-row DELETE failure must RAISE, not be treated as
+            # success. Previously this only printed a WARNING and returned a
+            # success result, leaving stale data in Snowflake undetected.
+            raise RuntimeError(
+                f"Failed to clear Snowflake target {sf_full} during zero-row sync: {clear_err}"
+            )
         return {"source_rows": 0, "deleted_rows": 0, "inserted_rows": 0}
 
     # Cast complex types (map, struct, array) to string for safe pandas

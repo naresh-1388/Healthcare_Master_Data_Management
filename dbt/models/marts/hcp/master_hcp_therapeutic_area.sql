@@ -7,8 +7,10 @@
 -- table (business-friendly names on the HCP side, e.g. firstName ->
 -- First_Name; pure passthrough on the HCO side - both preserved exactly
 -- as audited in the workbook).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "X_infa360_TherapeuticArea_parentId" as "Global_HCP_ID",
     "X_infa360_activeIndicator" as "Active_Indicator",
     "X_infa360_therapeuticArea" as "Therapeutic_Area",

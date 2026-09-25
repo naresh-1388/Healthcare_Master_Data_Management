@@ -231,18 +231,19 @@ else:
 
 # Add force_resync widget (default: false)
 # Set to 'true' to force a full re-sync even if status is already 'Y'.
+# FIX #9: Uses {catalog} variable instead of hardcoded HMDM_DEV.
 dbutils.widgets.text("force_resync", "false", "Force re-sync (true/false)")
 force_resync = dbutils.widgets.get("force_resync").strip().lower() == "true"
 
 if force_resync:
     print("force_resync=true -- resetting snowflake_sync_status to 'N'")
-    spark.sql("""
-        UPDATE HMDM_DEV.util.ctl_batch_log_tbl
+    spark.sql(f"""
+        UPDATE {catalog}.util.ctl_batch_log_tbl
         SET snowflake_sync_status = 'N'
         WHERE source_system_name = 'IQVIA_API'
           AND batch_id = (
               SELECT MAX(batch_id)
-              FROM HMDM_DEV.util.ctl_batch_log_tbl
+              FROM {catalog}.util.ctl_batch_log_tbl
               WHERE source_system_name = 'IQVIA_API'
           )
     """)
@@ -254,13 +255,13 @@ if force_resync:
 sync_already_done = False
 if creds:
     try:
-        existing_cols = spark.sql("DESCRIBE TABLE HMDM_DEV.util.ctl_batch_log_tbl").collect()
+        existing_cols = spark.sql(f"DESCRIBE TABLE {catalog}.util.ctl_batch_log_tbl").collect()
         col_names = [row.col_name for row in existing_cols]
         
         if 'snowflake_sync_status' in col_names:
-            latest_sync = spark.sql("""
+            latest_sync = spark.sql(f"""
                 SELECT snowflake_sync_status 
-                FROM HMDM_DEV.util.ctl_batch_log_tbl 
+                FROM {catalog}.util.ctl_batch_log_tbl 
                 WHERE source_system_name = 'IQVIA_API'
                 ORDER BY batch_id DESC LIMIT 1
             """).collect()
@@ -278,15 +279,24 @@ if creds and not sync_already_done:
         sync_master=True,
     )
     
-    # Display summary
+    # Display summary and collect failed tables (FIX #5)
+    failed_tables = []
     print("\n=== Sync Results ===")
     for layer, tables in results.items():
         print(f"\n{layer.upper()}:")
         for table, result in tables.items():
             if "error" in result:
                 print(f"  {table}: ERROR -- {result['error']}")
+                failed_tables.append(f"{layer}.{table}")
             else:
                 print(f"  {table}: {result.get('source_rows', 0)} rows synced")
+    
+    # FIX #5: If ANY sync errors occurred, FAIL the pipeline immediately.
+    # Do NOT continue to dbt with partial/stale Snowflake data.
+    if failed_tables:
+        error_msg = f"Snowflake sync FAILED for {len(failed_tables)} tables: {failed_tables}"
+        print(f"\nERROR: {error_msg}")
+        raise RuntimeError(error_msg)
 elif creds and sync_already_done:
     print("Sync skipped -- latest batch already synced to Snowflake")
     results = {}
@@ -325,6 +335,7 @@ else:
 # ============================================================
 # Mark Snowflake sync as complete in the batch control table.
 # This adds a new column 'snowflake_sync_status' to track sync state.
+# FIX #9: Uses {catalog} variable instead of hardcoded HMDM_DEV.
 
 if creds and results:
     # Check if any tables had errors before marking sync as complete.
@@ -344,19 +355,19 @@ if creds and results:
             # Add snowflake_sync_status column if it doesn't exist.
             # Databricks does not support 'ADD COLUMN IF NOT EXISTS',
             # so we check the schema first.
-            existing_cols = spark.sql("DESCRIBE TABLE HMDM_DEV.util.ctl_batch_log_tbl").collect()
+            existing_cols = spark.sql(f"DESCRIBE TABLE {catalog}.util.ctl_batch_log_tbl").collect()
             col_names = [row.col_name for row in existing_cols]
             
             if 'snowflake_sync_status' not in col_names:
-                spark.sql("""
-                    ALTER TABLE HMDM_DEV.util.ctl_batch_log_tbl
+                spark.sql(f"""
+                    ALTER TABLE {catalog}.util.ctl_batch_log_tbl
                     ADD COLUMNS (snowflake_sync_status STRING)
                 """)
                 print("Added snowflake_sync_status column")
             
             # Update latest batch
-            spark.sql("""
-                UPDATE HMDM_DEV.util.ctl_batch_log_tbl
+            spark.sql(f"""
+                UPDATE {catalog}.util.ctl_batch_log_tbl
                 SET snowflake_sync_status = 'Y'
                 WHERE egress_status = 'Y'
                   AND coalesce(snowflake_sync_status, 'N') != 'Y'
@@ -432,18 +443,22 @@ print("=" * 60)
 #   - STAGING: 22 tables (13 HCP + 9 HCO)
 #   - MASTER:  10 tables (5 HCP + 5 HCO, including HCP main table)
 #   - Total: 32 tables
+# FIX #9: Uses {catalog} variable for Databricks queries and sf_db for
+# Snowflake queries instead of hardcoded HMDM_DEV.
 import snowflake.connector
 import pandas as pd
 
 creds = get_snowflake_credentials()
 
 if creds:
+    sf_db = creds.get('database', catalog)
     conn = snowflake.connector.connect(
         user=creds['user'],
         password=creds['password'],
         account=creds['account'],
+        role=creds.get('role', ''),
         warehouse=creds.get('warehouse', 'COMPUTE_WH'),
-        database=creds.get('database', 'HMDM_DEV'),
+        database=sf_db,
         schema=creds.get('schema', 'PUBLIC'),
     )
     cur = conn.cursor()
@@ -467,12 +482,12 @@ if creds:
         # Get Databricks source count (lowercase table name)
         dbx_table = tbl.lower()
         try:
-            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM HMDM_DEV.staging.{dbx_table}").collect()[0][0]
+            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM {catalog}.staging.{dbx_table}").collect()[0][0]
         except Exception:
             dbx_cnt = -1  # Table does not exist in Databricks
 
         try:
-            cur.execute(f"SELECT COUNT(*) FROM HMDM_DEV.STAGING.{tbl}")
+            cur.execute(f"SELECT COUNT(*) FROM {sf_db}.STAGING.{tbl}")
             sf_cnt = cur.fetchone()[0]
             staging_total += sf_cnt
             # Compare Databricks vs Snowflake counts
@@ -511,12 +526,12 @@ if creds:
         # Get Databricks source count (lowercase table name)
         dbx_table = tbl.lower()
         try:
-            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM HMDM_DEV.master.{dbx_table}").collect()[0][0]
+            dbx_cnt = spark.sql(f"SELECT COUNT(*) FROM {catalog}.master.{dbx_table}").collect()[0][0]
         except Exception:
             dbx_cnt = -1  # Table does not exist in Databricks
 
         try:
-            cur.execute(f"SELECT COUNT(*) FROM HMDM_DEV.MASTER.{tbl}")
+            cur.execute(f"SELECT COUNT(*) FROM {sf_db}.MASTER.{tbl}")
             sf_cnt = cur.fetchone()[0]
             master_total += sf_cnt
             # Compare Databricks vs Snowflake counts
@@ -555,8 +570,15 @@ if creds:
     if errors == 0 and mismatches == 0:
         print("  VERIFICATION PASSED")
     else:
-        print("  WARNING: VERIFICATION INCOMPLETE -- check errors/mismatches above")
+        print("  ERROR: VERIFICATION FAILED -- check errors/mismatches above")
     print("=" * 60)
+    
+    # FIX #6: If verification errors or mismatches occurred, FAIL the pipeline.
+    # Mismatches mean Databricks and Snowflake data are inconsistent -- dbt
+    # would build models on wrong data. Pipeline must stop here.
+    if errors > 0 or mismatches > 0:
+        error_msg = f"Snowflake verification FAILED: {errors} errors, {mismatches} mismatches"
+        raise RuntimeError(error_msg)
 
     cur.close()
     conn.close()

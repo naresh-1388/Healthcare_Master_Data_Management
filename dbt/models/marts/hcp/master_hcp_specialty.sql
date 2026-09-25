@@ -7,8 +7,10 @@
 -- table (business-friendly names on the HCP side, e.g. firstName ->
 -- First_Name; pure passthrough on the HCO side - both preserved exactly
 -- as audited in the workbook).
+-- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
 select
+    "Source_FK" as "Source_FK",
     "X_infa360_SpecialtyType" as "Specialty",
     "X_infa360_SpecialtyClass" as "Specialty_Type",
     "X_infa360_SpecialtyRank" as "Specialty_Rank",
