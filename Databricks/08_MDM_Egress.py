@@ -200,44 +200,61 @@ hco_g = len(HCO_EGRESS_GROUPS) if SELECTED_ENTITY in ("HCO", "BOTH") else 0
 print(f"Egress Groups: {len(egress_groups)} ({hcp_g} HCP + {hco_g} HCO)")
 print("=" * 60)
 
-# Reset egress AND Snowflake sync batch status to 'N' so both stages reprocess.
-# This prevents stale Snowflake data when Databricks master is updated (FIX #7).
-# When egress replays with new data, Snowflake sync must also replay (not skip
-# based on old snowflake_sync_status='Y').
+# Reset egress AND Snowflake sync batch status to 'N' for ALL batches
+# where ingress_status='Y'. This ensures older batches that were previously
+# egressed are also replayed when egress reruns.
+# FIX #12: Previously only reset MAX(batch_id). Now resets ALL eligible.
 spark.sql(f"""
     UPDATE {catalog}.util.ctl_batch_log_tbl
     SET egress_status = 'N',
         snowflake_sync_status = 'N'
     WHERE source_system_name = '{source_system_name}'
-      AND batch_id = (
-          SELECT MAX(batch_id)
-          FROM {catalog}.util.ctl_batch_log_tbl
-          WHERE source_system_name = '{source_system_name}'
-      )
+      AND ingress_status = 'Y'
+      AND COALESCE(egress_status, 'N') = 'Y'
 """)
-print(f"Egress and Snowflake sync status reset to 'N' for latest batch ({source_system_name})")
+print(f"Egress and Snowflake sync status reset to 'N' for completed batches ({source_system_name})")
 
-# Resolve batch_id if not provided via widget.
-# This bypasses the module's get_latest_eligible_batch() which uses
-# spark.table() and may not reflect the UPDATE above on Spark Connect.
-if batch_id is None:
-    _bid_row = spark.sql(f"""
-        SELECT MAX(CAST(batch_id AS INT)) AS max_bid
-        FROM {catalog}.util.ctl_batch_log_tbl
-        WHERE source_system_name = '{source_system_name}'
-          AND ingress_status = 'Y'
-    """).collect()
-    if _bid_row and _bid_row[0]['max_bid'] is not None:
-        batch_id = int(_bid_row[0]['max_bid'])
-        print(f"Resolved batch_id = {batch_id} (latest with ingress_status=Y)")
-    else:
-        print("WARNING: No batch with ingress_status=Y found")
+# FIX #12: Get ALL eligible batch IDs (ingress_status='Y', egress_status!='Y').
+# Previously only MAX(batch_id) was processed, starving older pending batches.
+eligible_batches = spark.sql(f"""
+    SELECT batch_id
+    FROM {catalog}.util.ctl_batch_log_tbl
+    WHERE source_system_name = '{source_system_name}'
+      AND ingress_status = 'Y'
+      AND COALESCE(egress_status, 'N') != 'Y'
+    ORDER BY batch_id
+""").collect()
 
-failures = []
-rows_written = 0
-hcp_rows = 0
-hco_rows = 0
-for source_table, target_table in egress_groups:
+eligible_batch_ids = [int(row['batch_id']) for row in eligible_batches if row['batch_id'] is not None]
+
+if not eligible_batch_ids:
+    print("No eligible batches for egress. Skipping.")
+    dbutils.notebook.exit("SUCCESS")
+
+print(f"Found {len(eligible_batch_ids)} eligible batch(es): {eligible_batch_ids}")
+
+# If widget batch_id is provided, process only that batch.
+if batch_id is not None:
+    batch_id = int(batch_id)
+    eligible_batch_ids = [batch_id]
+    print(f"Widget batch_id specified: processing only {batch_id}")
+
+all_failures = []
+total_rows_written = 0
+total_hcp_rows = 0
+total_hco_rows = 0
+
+for current_batch_id in eligible_batch_ids:
+    print(f"\n{'=' * 60}")
+    print(f"Processing batch_id = {current_batch_id}")
+    print(f"{'=' * 60}")
+
+    failures = []
+    no_eligible_batch = False
+    rows_written = 0
+    hcp_rows = 0
+    hco_rows = 0
+    for source_table, target_table in egress_groups:
     # FIX #4: Expected MDM source table missing is a FAILURE (not silent SKIP).
     # HCP/HCO egress groups are defined explicitly -- if a table is in the list,
     # it's expected to exist. If it doesn't, that's an upstream pipeline failure.
@@ -254,11 +271,18 @@ for source_table, target_table in egress_groups:
             source_system_name=source_system_name,
             source_table=source_table,
             target_table=target_table,
-            batch_id=batch_id,
+            batch_id=current_batch_id,
             write_mode=write_mode,
             skip_batch_update=True,
         )
         print(result)
+        # FIX #11: Check for NO_ELIGIBLE_BATCH before marking egress_status=Y.
+        # If no batch is eligible, do NOT mark egress_status=Y (was previously
+        # treated as success because it is a return value, not an exception).
+        if result.get("status") == "NO_ELIGIBLE_BATCH":
+            print("No eligible batch for egress. Skipping egress_status update.")
+            no_eligible_batch = True
+            continue
         written = result.get("written_records", 0)
         rows_written += written
         if "HCP" in source_table:
@@ -269,44 +293,44 @@ for source_table, target_table in egress_groups:
         print(f"FAILED: {source_table} -> {target_table}: {exc}")
         failures.append((source_table, str(exc)))
 
-# Update egress batch status to 'Y' once after all groups
-if not failures:
-    spark.sql(f"""
-        UPDATE {catalog}.util.ctl_batch_log_tbl
-        SET egress_status = 'Y'
-        WHERE source_system_name = '{source_system_name}'
-          AND COALESCE(egress_status, 'N') = 'N'
-          AND batch_id = (
-              SELECT MAX(batch_id)
-              FROM {catalog}.util.ctl_batch_log_tbl
-              WHERE source_system_name = '{source_system_name}'
-          )
-    """)
-    print(f"\nEgress batch status updated to 'Y' for {source_system_name}")
-elif failures:
-    spark.sql(f"""
-        UPDATE {catalog}.util.ctl_batch_log_tbl
-        SET egress_status = 'N'
-        WHERE source_system_name = '{source_system_name}'
-          AND batch_id = (
-              SELECT MAX(batch_id)
-              FROM {catalog}.util.ctl_batch_log_tbl
-              WHERE source_system_name = '{source_system_name}'
-          )
-    """)
-    print(f"\nEgress batch status set to N (failures occurred)")
+    # Update egress batch status for this specific batch only.
+    # FIX #12: Per-batch status update (was MAX(batch_id) for all).
+    if not failures and not no_eligible_batch:
+        spark.sql(f"""
+            UPDATE {catalog}.util.ctl_batch_log_tbl
+            SET egress_status = 'Y'
+            WHERE source_system_name = '{source_system_name}'
+              AND batch_id = {current_batch_id}
+        """)
+        print(f"Egress batch status updated to 'Y' for batch {current_batch_id}")
+    elif failures:
+        spark.sql(f"""
+            UPDATE {catalog}.util.ctl_batch_log_tbl
+            SET egress_status = 'N'
+            WHERE source_system_name = '{source_system_name}'
+              AND batch_id = {current_batch_id}
+        """)
+        print(f"Egress batch status set to N for batch {current_batch_id} (failures occurred)")
+    elif no_eligible_batch:
+        print(f"No eligible batch for batch {current_batch_id}. egress_status remains unchanged.")
 
-print(f"\nSummary: {rows_written} rows written, {len(failures)} failed")
+    all_failures.extend([(current_batch_id, s, e) for s, e in failures])
+    total_rows_written += rows_written
+    total_hcp_rows += hcp_rows
+    total_hco_rows += hco_rows
+
+print(f"\nSummary: {total_rows_written} rows written, {len(all_failures)} failed")
 print("\n" + "=" * 60)
 print("MDM EGRESS SUMMARY")
 print("=" * 60)
 print(f"Source System : {source_system_name}")
 print(f"Entity Type   : {SELECTED_ENTITY}")
+print(f"Batches       : {len(eligible_batch_ids)} processed")
 hcp_groups = len(HCP_EGRESS_GROUPS) if SELECTED_ENTITY in ("HCP", "BOTH") else 0
 hco_groups = len(HCO_EGRESS_GROUPS) if SELECTED_ENTITY in ("HCO", "BOTH") else 0
-print(f"  HCP: {hcp_groups} groups, {hcp_rows} rows")
-print(f"  HCO: {hco_groups} groups, {hco_rows} rows")
-print(f"  Total: {len(egress_groups)} groups, {rows_written} rows")
+print(f"  HCP: {hcp_groups} groups, {total_hcp_rows} rows")
+print(f"  HCO: {hco_groups} groups, {total_hco_rows} rows")
+print(f"  Total: {len(egress_groups)} groups, {total_rows_written} rows")
 
 # COMMAND ----------
 

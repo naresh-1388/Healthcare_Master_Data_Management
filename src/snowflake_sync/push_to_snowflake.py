@@ -184,7 +184,7 @@ def create_snowflake_connection(creds: Dict[str, str]):
         password=creds["password"],
         role=creds.get("role", ""),
         warehouse=creds.get("warehouse", ""),
-        database=creds.get("database", "HMDM_DEV"),
+        database=creds.get("database", os.environ.get("SNOWFLAKE_DATABASE", "HMDM_DEV")),
         schema=creds.get("schema", "PUBLIC"),
     )
     print(f"Connected to Snowflake: {creds['account']}")
@@ -240,7 +240,7 @@ def _sync_one_table(
     dbx_table: str,
     sf_schema: str,
     sf_table: str,
-    sf_database: str = "HMDM_DEV",
+    sf_database: str = os.environ.get("SNOWFLAKE_DATABASE", "HMDM_DEV"),
 ) -> Dict[str, int]:
     """
     Sync a single Databricks table to Snowflake using TRUNCATE-AND-LOAD.
@@ -380,10 +380,20 @@ def _sync_one_table(
 
         # Check if the failure is a schema/type mismatch (e.g. existing Snowflake
         # table was created by original DDL with different column types than
-        # Databricks). If so, fall back to overwrite=True which DROPs and
-        # recreates the table with the schema from the Databricks data.
+        # Databricks). Only trigger the DROP+recreate fallback for explicitly
+        # verified schema incompatibility -- NOT for generic compilation errors
+        # which could be caused by permissions, missing objects, or other
+        # unrelated issues that would be masked by a destructive recreate.
         err_str = str(first_err).lower()
-        if "type does not match" in err_str or "compilation error" in err_str:
+        schema_mismatch_triggers = [
+            "type does not match",
+            "invalid argument types",
+            "value out of range",
+            "cannot cast",
+            "sql compilation error: expression type does not match",
+        ]
+        is_schema_mismatch = any(trigger in err_str for trigger in schema_mismatch_triggers)
+        if is_schema_mismatch:
             print(f"    [schema-mismatch] Recreating table with Databricks schema: {first_err}")
             conn.autocommit(True)
 
@@ -407,8 +417,8 @@ def _sync_one_table(
 
 
 def sync_staging_to_snowflake(
-    catalog: str = "HMDM_DEV",
-    sf_database: str = "HMDM_DEV",
+    catalog: str = os.environ.get("DATABRICKS_CATALOG", "HMDM_DEV"),
+    sf_database: str = os.environ.get("SNOWFLAKE_DATABASE", "HMDM_DEV"),
     sf_schema: str = "STAGING",
 ) -> Dict[str, Dict]:
     """
@@ -463,8 +473,8 @@ def sync_staging_to_snowflake(
 
 
 def sync_master_to_snowflake(
-    catalog: str = "HMDM_DEV",
-    sf_database: str = "HMDM_DEV",
+    catalog: str = os.environ.get("DATABRICKS_CATALOG", "HMDM_DEV"),
+    sf_database: str = os.environ.get("SNOWFLAKE_DATABASE", "HMDM_DEV"),
     sf_schema: str = "MASTER",
 ) -> Dict[str, Dict]:
     """
@@ -519,7 +529,7 @@ def sync_master_to_snowflake(
 
 
 def run_snowflake_sync(
-    catalog: str = "HMDM_DEV",
+    catalog: str = os.environ.get("DATABRICKS_CATALOG", "HMDM_DEV"),
     sync_staging: bool = True,
     sync_master: bool = True,
 ) -> Dict[str, Dict]:

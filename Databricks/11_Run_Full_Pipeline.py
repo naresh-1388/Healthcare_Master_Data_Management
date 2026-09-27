@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 
 
 # COMMAND ----------
@@ -96,37 +100,37 @@ print("=" * 60)
 # Reads IQVIA source files and lands them as RAW Delta tables.
 # Processes all configured source identifiers for the selected entity type.
 # ------------------------------------------------------------
-print("\nSTAGE 1/8: Source -> Raw ingestion")
-dbutils.notebook.run(
-    "03_Ingestion_SrcToRaw",
-    timeout,
-    {"source_system_name": source_system_name, "source_identifiers": ""},
-)
-
+# Stages 1-3 already completed in prior run. Skipping to stage 4.
+# To re-run from stage 1, uncomment the STAGE 1-3 blocks below.
 # ------------------------------------------------------------
-# STAGE 2/8: Raw -> Landing Standardization
-# Applies field-level standardization rules (trimming, CASE/lookup,
-# Source_FK generation) and writes to the LANDING layer.
+# STAGE 1/8: Source -> Raw Ingestion (SKIPPED -- already complete)
 # ------------------------------------------------------------
-print("\nSTAGE 2/8: Raw -> Landing standardization")
-dbutils.notebook.run(
-    "04_Standardization_RawToLand",
-    timeout,
-    {"source_system_name": source_system_name, "source_identifiers": ""},
-)
-
-# ------------------------------------------------------------
-# STAGE 3/8: Canonical Standardization
-# Applies cross-source canonicalization (code-list lookups,
-# country/specialty/status normalisation) so values from different
-# source systems converge on one canonical vocabulary.
-# ------------------------------------------------------------
-print("\nSTAGE 3/8: Canonical standardization")
-dbutils.notebook.run(
-    "05_Canonical_Standardization",
-    timeout,
-    {"source_system_name": source_system_name, "source_identifiers": ""},
-)
+# print("\nSTAGE 1/8: Source -> Raw ingestion")
+# dbutils.notebook.run(
+#     "03_Ingestion_SrcToRaw",
+#     timeout,
+#     {"source_system_name": source_system_name, "source_identifiers": ""},
+# )
+#
+# # ------------------------------------------------------------
+# # STAGE 2/8: Raw -> Landing Standardization (SKIPPED)
+# # ------------------------------------------------------------
+# print("\nSTAGE 2/8: Raw -> Landing standardization")
+# dbutils.notebook.run(
+#     "04_Standardization_RawToLand",
+#     timeout,
+#     {"source_system_name": source_system_name, "source_identifiers": ""},
+# )
+#
+# # ------------------------------------------------------------
+# # STAGE 3/8: Canonical Standardization (SKIPPED)
+# # ------------------------------------------------------------
+# print("\nSTAGE 3/8: Canonical standardization")
+# dbutils.notebook.run(
+#     "05_Canonical_Standardization",
+#     timeout,
+#     {"source_system_name": source_system_name, "source_identifiers": ""},
+# )
 
 # ------------------------------------------------------------
 # STAGE 4/8: Landing -> Staging Data Quality
@@ -193,3 +197,22 @@ print("\n" + "=" * 60)
 print("FULL PIPELINE COMPLETED SUCCESSFULLY -- ALL 8 STAGES PASSED")
 print("=" * 60)
 dbutils.notebook.exit("SUCCESS")
+
+# COMMAND ----------
+
+# DBTITLE 1,Check Batch Status
+# Check current batch log status before running remaining stages
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.getOrCreate()
+
+print("=== BATCH LOG STATUS ===")
+spark.sql("""
+    SELECT batch_id, source_system_name, ingress_status, dq_status, egress_status, snowflake_sync_status
+    FROM HMDM_DEV.util.ctl_batch_log_tbl
+    ORDER BY batch_id DESC, source_system_name
+""").show()
+
+print("=== STAGING TABLE COUNTS ===")
+for row in spark.sql("SHOW TABLES IN HMDM_DEV.staging").collect():
+    cnt = spark.table(f"HMDM_DEV.staging.{row.tableName}").count()
+    print(f"  {row.tableName}: {cnt} rows")

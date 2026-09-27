@@ -18,6 +18,11 @@ LAST_NAME = "hcp.lastName"
 ADDRESS_COUNTRY = "address.country"
 ADDRESS_COUNTRY_CODE = "address.countryCode"
 
+# HCO field constants
+HCO_NAME = "hco.organizationName"
+HCO_TYPE = "hco.organizationType"
+HCO_COUNTRY = "hco.country"
+
 
 MDM_HUB_TEMPLATE: Dict[str, Any] = {
     "searchControls": {
@@ -83,6 +88,68 @@ MDM_HUB_TEMPLATE: Dict[str, Any] = {
 }
 
 
+# HCO MDM Hub template -- organization-shaped search record.
+# HCO entities use organization fields (name, type, address, phone, etc.)
+# instead of individual fields (firstName, lastName, etc.) used by HCP.
+HCO_MDM_HUB_TEMPLATE: Dict[str, Any] = {
+    "searchControls": {
+        "maxRecordsToReturn": "20",
+        "searchLevel": "Typical",
+        "fileRecordLimit": "1000",
+        "population": "brazil",
+    },
+    "data": {
+        "searchRecord": {
+            "HCO_Name": "",
+            "HCO_Type": {"Code": "", "Name": ""},
+            "HCO_Subtype": "",
+            "Status": {"Code": "", "Name": ""},
+            "Official_Name": "",
+            "Transparency_Reporting_Name": "",
+            "Parent_Organization_Name": "",
+            "Teaching_Hospital_Flag": "",
+            "Profit_Flag": "",
+            "Accept_Medicare": "",
+            "Accept_Medicaid": "",
+            "Ownership_Status": "",
+            "Bed_Count": "",
+            "Resident_Count": "",
+            "Website": "",
+            "X_hco_address": [
+                {
+                    "X_address_line_1": "",
+                    "X_city": "",
+                    "X_state": {"Code": "", "Name": ""},
+                    "X_postal_code": "",
+                    "X_country": {"Code": "", "Name": ""},
+                    "X_address_type": {"Code": "", "Name": ""},
+                }
+            ],
+            "Alternate_Name": [
+                {
+                    "Alternate_Name": "",
+                    "Alternate_Name_Type": {"Code": "", "Name": ""},
+                }
+            ],
+            "ElectronicAddress": [{"electronicAddress": ""}],
+            "Phone": [{"phoneNumber": ""}],
+            "TaxDetail": [
+                {
+                    "taxNumber": "",
+                    "taxNumberType": {"Code": "", "Name": ""},
+                }
+            ],
+            "X_hco_hierarchy": [
+                {
+                    "Parent_Organization_EID": "",
+                    "Relationship_Type": {"Code": "", "Name": ""},
+                }
+            ],
+        }
+    },
+}
+
+
 MDM_HUB_FIELD_MAPPING = (
     (FIRST_NAME, ("data", "searchRecord", "firstName")),
     (MIDDLE_NAME, ("data", "searchRecord", "middleName")),
@@ -107,6 +174,18 @@ MDM_HUB_FIELD_MAPPING = (
         "address.type",
         ("data", "searchRecord", "X_hcp_address", 0, "X_address_type", "Code"),
     ),
+)
+
+# HCO field mapping -- maps incoming SBC HCO payload fields to the
+# HCO MDM Hub template paths.
+HCO_MDM_HUB_FIELD_MAPPING = (
+    (HCO_NAME, ("data", "searchRecord", "HCO_Name")),
+    (HCO_TYPE, ("data", "searchRecord", "HCO_Type", "Code")),
+    ("address.city", ("data", "searchRecord", "X_hco_address", 0, "X_city")),
+    ("address.primary", ("data", "searchRecord", "X_hco_address", 0, "X_address_line_1")),
+    (ADDRESS_COUNTRY_CODE, ("data", "searchRecord", "X_hco_address", 0, "X_country", "Code")),
+    ("address.longPostalCode", ("data", "searchRecord", "X_hco_address", 0, "X_postal_code")),
+    ("address.type", ("data", "searchRecord", "X_hco_address", 0, "X_address_type", "Code")),
 )
 
 COUNTRY_CODE_TO_POPULATION = {
@@ -138,13 +217,31 @@ def _set_nested(obj: Dict[str, Any], path: tuple[Any, ...], value: Any) -> None:
             current = current[key]
 
 
-def transform_to_mdm_hub(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Transform the incoming SBC payload into the MDM_HUB request."""
+def transform_to_mdm_hub(
+    incoming: Dict[str, Any] | None,
+    entity_type: str = "HCP",
+) -> Dict[str, Any]:
+    """Transform the incoming SBC payload into the MDM_HUB request.
 
+    Args:
+        incoming: The SBC search payload from the client.
+        entity_type: "HCP" or "HCO" -- controls which MDM Hub template
+            and field mapping is used. HCP uses individual fields
+            (firstName, lastName, etc.); HCO uses organization fields
+            (organizationName, organizationType, etc.).
+    """
     incoming = incoming or {}
-    output = copy.deepcopy(MDM_HUB_TEMPLATE)
 
-    for source, path in MDM_HUB_FIELD_MAPPING:
+    if entity_type.upper() == "HCO":
+        template = HCO_MDM_HUB_TEMPLATE
+        field_mapping = HCO_MDM_HUB_FIELD_MAPPING
+    else:
+        template = MDM_HUB_TEMPLATE
+        field_mapping = MDM_HUB_FIELD_MAPPING
+
+    output = copy.deepcopy(template)
+
+    for source, path in field_mapping:
         value = incoming.get(source, "")
         if isinstance(value, list):
             value = value[0] if value else ""
@@ -158,18 +255,22 @@ def transform_to_mdm_hub(incoming: Dict[str, Any] | None) -> Dict[str, Any]:
         ).strip().upper()
         population = COUNTRY_CODE_TO_POPULATION.get(country_code, "")
 
-    full_name = " ".join(
-        filter(
-            None,
-            [
-                incoming.get(FIRST_NAME, ""),
-                incoming.get(MIDDLE_NAME, ""),
-                incoming.get(LAST_NAME, ""),
-            ],
+    if entity_type.upper() == "HCO":
+        org_name = incoming.get(HCO_NAME, "")
+        output["data"]["searchRecord"]["Official_Name"] = org_name
+        full_name = org_name
+    else:
+        full_name = " ".join(
+            filter(
+                None,
+                [
+                    incoming.get(FIRST_NAME, ""),
+                    incoming.get(MIDDLE_NAME, ""),
+                    incoming.get(LAST_NAME, ""),
+                ],
+            )
         )
-    )
-
-    output["data"]["searchRecord"]["fullName"] = full_name
+        output["data"]["searchRecord"]["fullName"] = full_name
     output["searchControls"]["population"] = str(population).lower()
 
     return output
@@ -179,6 +280,8 @@ __all__ = [
     "COUNTRY_CODE_TO_POPULATION",
     "MDM_HUB_FIELD_MAPPING",
     "MDM_HUB_TEMPLATE",
+    "HCO_MDM_HUB_FIELD_MAPPING",
+    "HCO_MDM_HUB_TEMPLATE",
     "transform_to_mdm_hub",
 ]
 

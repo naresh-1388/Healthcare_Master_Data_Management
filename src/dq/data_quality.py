@@ -86,22 +86,16 @@ except Exception:
             log_tbl_nm,
         )
     except Exception:
-        # Local/test fallback only.
-        dqm_config_tbl = (
-            "HMDM_DEV.util.ctl_dq_entity_mstr"
-        )
-        dqm_log_tbl = (
-            "HMDM_DEV.util.ctl_dqm_log_tbl"
-        )
-        dqm_reject_tbl = (
-            "HMDM_DEV.util.dqm_reject_tbl"
-        )
-        batch_log_tbl = (
-            "HMDM_DEV.util.ctl_batch_log_tbl"
-        )
-        log_tbl_nm = (
-            "HMDM_DEV.util.ctl_log_tbl"
-        )
+        # Local/test fallback only -- use env var so tests don't hardcode DEV.
+        import os
+        _cat = os.environ.get("DATABRICKS_CATALOG", "HMDM_DEV")
+        _util = os.environ.get("DATABRICKS_UTIL_SCHEMA", "util")
+        dqm_config_tbl = f"{_cat}.{_util}.ctl_dq_entity_mstr"
+        dqm_log_tbl = f"{_cat}.{_util}.ctl_dqm_log_tbl"
+        dqm_reject_tbl = f"{_cat}.{_util}.dqm_reject_tbl"
+        batch_log_tbl = f"{_cat}.{_util}.ctl_batch_log_tbl"
+        log_tbl_nm = f"{_cat}.{_util}.ctl_log_tbl"
+        get_s3_location = None
 
 
 DQ_CONFIG_TABLE = dqm_config_tbl
@@ -430,38 +424,17 @@ def resolve_batch_id(
 
     If batch_id is explicitly supplied, use it.
 
-    Otherwise, when BATCH_ID exists, process only the latest
-    batch in the source dataframe.
-
-    This prevents historical batches from being processed again
-    when the staging table contains multiple batches.
+    Otherwise, return None to process ALL pending batches.
+    Previously this picked only the latest batch (F.max), which could
+    starve older pending batches when newer batches arrived before DQ
+    processed them. Returning None causes filter_to_batch to return the
+    unfiltered dataframe (all batches).
     """
 
     if batch_id is not None:
         return int(batch_id)
 
-    batch_column = None
-
-    for column in source_df.columns:
-        if column.lower() == "batch_id":
-            batch_column = column
-            break
-
-    if batch_column is None:
-        return None
-
-    latest_row = (
-        source_df
-        .select(F.max(F.col(batch_column)).alias("_latest_batch_id"))
-        .collect()[0]
-    )
-
-    latest_batch_id = latest_row["_latest_batch_id"]
-
-    if latest_batch_id is None:
-        return None
-
-    return int(latest_batch_id)
+    return None
 
 
 def filter_to_batch(
@@ -471,8 +444,8 @@ def filter_to_batch(
     """
     Restrict source dataframe to one batch.
 
-    If BATCH_ID is present and batch_id is not supplied,
-    the latest BATCH_ID is selected.
+    If batch_id is not supplied, return ALL batches (resolved_batch_id
+    is None, meaning no filter is applied).
     """
 
     resolved_batch_id = resolve_batch_id(

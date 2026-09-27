@@ -42,7 +42,8 @@ except Exception:
             lnd_schema as LANDING_SCHEMA,
         )
     except Exception:
-        CATALOG = "HMDM_DEV"
+        import os
+        CATALOG = os.environ.get("DATABRICKS_CATALOG", "HMDM_DEV")
         UTIL_SCHEMA = f"{CATALOG}.util"
         RAW_SCHEMA = f"{CATALOG}.raw"
         LANDING_SCHEMA = f"{CATALOG}.landing"

@@ -9,8 +9,47 @@
 -- FIX #6: Added join to stg_HCO_NAME for org identity (name, type, status,
 -- flags, dates). Previously missing this join left HCO without org identity.
 
+-- FIX #10: Pre-deduplicate each child table to one row per SOURCE_FK
+-- using ROW_NUMBER before joining. This prevents row multiplication
+-- when child tables have multiple rows per entity.
+
 with base as (
     select * from {{ ref('stg_HCO_ADDRESS') }}
+),
+
+hco_name as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCO_NAME') }}
+    ) where _rn = 1
+),
+
+hco_alternate_name as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCO_ALTERNATE_NAME') }}
+    ) where _rn = 1
+),
+
+hco_email as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCO_EMAIL') }}
+    ) where _rn = 1
+),
+
+hco_hierarchy as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCO_HIERARCHY') }}
+    ) where _rn = 1
+),
+
+hco_tax as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCO_TAX') }}
+    ) where _rn = 1
 )
 
 select
@@ -52,13 +91,13 @@ select
     hco_hierarchy."Relationship_Type" as "X_hierarchy_relationship_type",
     hco_tax."Tax_Number" as "X_informatica_tax_number"
 from base
-left join {{ ref('stg_HCO_NAME') }} as hco_name
+left join hco_name
     on base.SOURCE_FK = hco_name.SOURCE_FK
-left join {{ ref('stg_HCO_ALTERNATE_NAME') }} as hco_alternate_name
+left join hco_alternate_name
     on base.SOURCE_FK = hco_alternate_name.SOURCE_FK
-left join {{ ref('stg_HCO_EMAIL') }} as hco_email
+left join hco_email
     on base.SOURCE_FK = hco_email.SOURCE_FK
-left join {{ ref('stg_HCO_HIERARCHY') }} as hco_hierarchy
+left join hco_hierarchy
     on base.SOURCE_FK = hco_hierarchy.SOURCE_FK
-left join {{ ref('stg_HCO_TAX') }} as hco_tax
+left join hco_tax
     on base.SOURCE_FK = hco_tax.SOURCE_FK

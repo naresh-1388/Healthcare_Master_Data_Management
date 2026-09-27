@@ -9,6 +9,7 @@ models:
         description: "Primary business key (iqvia_id) for the HCP entity."
         tests:
           - not_null
+          - unique
   - name: master_hcp
     description: "Final HCP master table with renamed columns for downstream consumption."
     columns:
@@ -16,6 +17,7 @@ models:
         description: "Primary business key (iqvia_id) for the HCP entity."
         tests:
           - not_null
+          - unique
   - name: master_hcp_alternate_name
     description: "HCP alternate name child master table, reads from mdm_hub source."
     columns:
@@ -53,6 +55,7 @@ models:
         description: "Primary business key (iqvia_id) for the HCO entity."
         tests:
           - not_null
+          - unique
   - name: master_hco
     description: "Final HCO master table with renamed columns for downstream consumption."
     columns:
@@ -60,6 +63,7 @@ models:
         description: "Primary business key (iqvia_id) for the HCO entity."
         tests:
           - not_null
+          - unique
   - name: master_hco_name
     description: "HCO name child master table."
     columns:

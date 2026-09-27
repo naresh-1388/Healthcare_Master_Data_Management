@@ -212,8 +212,22 @@ try:
     print(f"Environment  : {env}")
     print(f"S3 Bucket    : {s3_bucket}")
 
+except ValueError:
+    # Unknown environment -- must fail fast, not silently use DEV.
+    # detect_environment() raises ValueError for workspace URLs that
+    # do not match any known dev/tst/prd pattern.
+    raise
 except Exception as e:
-    print(f"Environment detection failed, using DEV fallback: {e}")
+    # Non-environment error (SparkSession creation, conf access, etc.).
+    # In production this should also fail fast. DEV fallback is only
+    # allowed when explicitly enabled via HMDM_ALLOW_DEV_FALLBACK=true.
+    if os.environ.get("HMDM_ALLOW_DEV_FALLBACK", "false").lower() != "true":
+        raise RuntimeError(
+            f"Environment detection failed and DEV fallback is disabled. "
+            f"Set HMDM_ALLOW_DEV_FALLBACK=true to allow DEV fallback in "
+            f"non-production environments. Error: {e}"
+        )
+    print(f"Environment detection failed, using DEV fallback (explicitly enabled): {e}")
     catalog = "hmdm_dev"
     env = "dev"
     mail_recipient = "dev"

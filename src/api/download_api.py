@@ -112,7 +112,7 @@ def validate_request_payload(
                 "field_path": "mdmEntityType",
                 "error_type": "MISSING",
                 "message": (
-                    "mdmEntityType is required and must be 'HCP'"
+                    "mdmEntityType is required and must be 'HCP' or 'HCO'"
                 ),
             }
         )
@@ -121,7 +121,7 @@ def validate_request_payload(
             {
                 "field_path": "mdmEntityType",
                 "error_type": "INVALID",
-                "message": "mdmEntityType must be 'HCP'",
+                "message": "mdmEntityType must be 'HCP' or 'HCO'",
             }
         )
 
@@ -1090,8 +1090,16 @@ def build_structured_error_response(
 
 def transform_iqvia_to_mdm_hub_post(
     iqvia_response: dict[str, Any],
+    entity_type: str = "HCP",
 ) -> dict[str, Any]:
-    """Transform the IQVIA response into an MDM_HUB POST payload."""
+    """Transform the IQVIA response into an MDM_HUB POST payload.
+
+    Args:
+        entity_type: "HCP" or "HCO" -- controls whether individual
+            (firstName, lastName, etc.) or organization (name, type, etc.)
+            fields are extracted from the IQVIA response and mapped to
+            the appropriate MDM Hub payload shape.
+    """
     try:
         results = (
             iqvia_response.get("response") or {}
@@ -1108,179 +1116,171 @@ def transform_iqvia_to_mdm_hub_post(
             or {}
         )
 
+        organization = (
+            first_result.get("organization")
+            or {}
+        )
+
+        is_hco = entity_type.upper() == "HCO"
+
         current_timestamp = int(
             time.time() * 1000
         )
 
         field_data: list[dict[str, Any]] = []
 
-        first_name = individual.get(
-            "firstName"
-        ) or ""
-
-        middle_name = individual.get(
-            "middleName"
-        ) or ""
-
-        last_name = individual.get(
-            "lastName"
-        ) or ""
-
-        full_name = (
-            f"{first_name} "
-            f"{middle_name or ''} "
-            f"{last_name}"
-        ).strip()
-
-        transparency_name = (
-            individual.get("usualFirstName")
-            or full_name
-        )
-
-        gender = {
-            "Code": (
-                individual.get("genderCode")
-                or ""
+        if is_hco:
+            org_name = organization.get("name") or ""
+            full_name = org_name
+            transparency_name = (
+                organization.get("legalName")
+                or org_name
             )
-        }
-
-        hcp_type = {
-            "Code": (
-                individual.get("typeCode")
-                or ""
-            )
-        }
-
-        hcp_status = {
-            "Code": (
-                individual.get("stateCode")
-                or ""
-            )
-        }
-
-        prefix = {
-            "Code": (
-                individual.get("prefixNameCode")
-                or ""
-            )
-        }
-
-        iqvia_title = {
-            "Code": (
-                individual.get("titleCode")
-                or ""
-            )
-        }
-
-        specialties = []
-
-        ada = individual.get("ada") or {}
-
-        for ada_key, ada_value in ada.items():
-            if ada_value.get("listCode") != "SP":
-                continue
-
-            rank_suffix = (
-                ada_key.split(",")[1]
-                if "," in ada_key
-                else "1"
-            )
-
-            specialty_object = {
-                "X_informatica_specialtyClass": {
-                    "Code": ada_value.get(
-                        "code",
-                        "",
-                    ),
-                    "Name": ada_value.get(
-                        "codeCorporateLabel",
-                        "",
-                    ),
-                },
-                "X_informatica_specialtyRank": None,
+            org_type = {
+                "Code": organization.get("typeCode") or "",
             }
-
-            group_specialty = ada.get(
-                f"1GS,{rank_suffix}"
-            )
-
-            if (
-                group_specialty
-                and group_specialty.get("code")
-            ):
-                specialty_object[
-                    "X_group_specialty"
-                ] = {
-                    "Code": group_specialty.get(
-                        "code"
-                    )
-                }
-
-            global_specialty = ada.get(
-                f"1SP,{rank_suffix}"
-            )
-
-            if (
-                global_specialty
-                and global_specialty.get("code")
-            ):
-                specialty_object[
-                    "X_global_specialty"
-                ] = {
-                    "Code": global_specialty.get(
-                        "code"
-                    )
-                }
-
-            specialties.append(
-                specialty_object
-            )
-
-        alternate_identifiers = [
-            {
-                "alternateIdentifierValue": (
-                    individual.get(
-                        "individualId"
-                    )
-                ),
-                "alternateIdentifierType": {
-                    "Code": "iqvia ID",
-                    "Name": "iqvia ID",
-                },
+            org_status = {
+                "Code": organization.get("stateCode") or "",
             }
-        ]
-
-        for key_type, key_object in (
-            individual.get(
-                "externalKeys",
-                {},
-            )
-            or {}
-        ).items():
-            if (
-                key_type in ("111", "121")
-                and isinstance(
-                    key_object,
-                    dict,
-                )
-            ):
-                alternate_identifiers.append(
-                    {
-                        "alternateIdentifierValue": (
-                            key_object.get(
-                                "value",
-                                "",
-                            )
-                        ),
+            alternate_identifiers = [
+                {
+                    "alternateIdentifierValue": organization.get("organizationId"),
+                    "alternateIdentifierType": {
+                        "Code": "iqvia ID",
+                        "Name": "iqvia ID",
+                    },
+                }
+            ]
+            for key_type, key_object in (
+                organization.get("externalKeys", {}) or {}
+            ).items():
+                if key_type in ("111", "121") and isinstance(key_object, dict):
+                    alternate_identifiers.append({
+                        "alternateIdentifierValue": key_object.get("value", ""),
                         "alternateIdentifierType": {
                             "Code": key_type,
-                            "Name": key_object.get(
-                                "typeLabel",
-                                "",
-                            ),
+                            "Name": key_object.get("typeLabel", ""),
                         },
-                    }
+                    })
+            specialties = []
+            qualification = []
+        else:
+            first_name = individual.get("firstName") or ""
+            middle_name = individual.get("middleName") or ""
+            last_name = individual.get("lastName") or ""
+            full_name = (f"{first_name} {middle_name or ''} {last_name}").strip()
+            transparency_name = individual.get("usualFirstName") or full_name
+            gender = {"Code": individual.get("genderCode") or ""}
+            hcp_type = {"Code": individual.get("typeCode") or ""}
+            hcp_status = {"Code": individual.get("stateCode") or ""}
+            prefix = {"Code": individual.get("prefixNameCode") or ""}
+            iqvia_title = {"Code": individual.get("titleCode") or ""}
+
+        if not is_hco:
+            specialties = []
+
+            ada = individual.get("ada") or {}
+
+            for ada_key, ada_value in ada.items():
+                if ada_value.get("listCode") != "SP":
+                    continue
+
+                rank_suffix = (
+                    ada_key.split(",")[1]
+                    if "," in ada_key
+                    else "1"
                 )
+
+                specialty_object = {
+                    "X_informatica_specialtyClass": {
+                        "Code": ada_value.get(
+                            "code",
+                            "",
+                        ),
+                        "Name": ada_value.get(
+                            "codeCorporateLabel",
+                            "",
+                        ),
+                    },
+                    "X_informatica_specialtyRank": None,
+                }
+
+                group_specialty = ada.get(
+                    f"1GS,{rank_suffix}"
+                )
+
+                if (
+                    group_specialty
+                    and group_specialty.get("code")
+                ):
+                    specialty_object[
+                        "X_group_specialty"
+                    ] = {
+                        "Code": group_specialty.get(
+                            "code"
+                        )
+                    }
+
+                global_specialty = ada.get(
+                    f"1SP,{rank_suffix}"
+                )
+
+                if (
+                    global_specialty
+                    and global_specialty.get("code")
+                ):
+                    specialty_object[
+                        "X_global_specialty"
+                    ] = {
+                        "Code": global_specialty.get(
+                            "code"
+                        )
+                    }
+
+                specialties.append(
+                    specialty_object
+                )
+
+        if not is_hco:
+            alternate_identifiers = [
+                {
+                    "alternateIdentifierValue": (
+                        individual.get("individualId")
+                    ),
+                    "alternateIdentifierType": {
+                        "Code": "iqvia ID",
+                        "Name": "iqvia ID",
+                    },
+                }
+            ]
+
+            for key_type, key_object in (
+                individual.get("externalKeys", {}) or {}
+            ).items():
+                if (
+                    key_type in ("111", "121")
+                    and isinstance(
+                        key_object,
+                        dict,
+                    )
+                ):
+                    alternate_identifiers.append(
+                        {
+                            "alternateIdentifierValue": (
+                                key_object.get(
+                                    "value",
+                                    "",
+                                )
+                            ),
+                            "alternateIdentifierType": {
+                                "Code": key_type,
+                                "Name": key_object.get(
+                                    "typeLabel",
+                                    "",
+                                ),
+                            },
+                        }
+                    )
 
         addresses = []
         seen_addresses: set[str] = set()
@@ -1437,27 +1437,26 @@ def transform_iqvia_to_mdm_hub_post(
                 field_data.append(
                     {
                         "fieldRef": (
-                            f"x_hcp_address"
+                            f"x_{'hco' if is_hco else 'hcp'}_address"
                             f"[{address_id}]"
                         ),
-                        "sourceLastUpdateDate": (
-                            current_timestamp
-                        ),
+                        "sourceLastUpdateDate": current_timestamp,
                     }
                 )
 
-        qualification = []
+        if not is_hco:
+            qualification = []
 
-        if individual.get("thesisYear"):
-            qualification.append(
-                {
-                    "X_informatica_degreeYear": (
-                        individual.get(
-                            "thesisYear"
+            if individual.get("thesisYear"):
+                qualification.append(
+                    {
+                        "X_informatica_degreeYear": (
+                            individual.get(
+                                "thesisYear"
+                            )
                         )
-                    )
-                }
-            )
+                    }
+                )
 
         phones = []
 
@@ -1527,10 +1526,29 @@ def transform_iqvia_to_mdm_hub_post(
             }
         )
 
+        if is_hco:
+            return {
+                "HCO_Name": full_name,
+                "Official_Name": transparency_name,
+                "Transparency_Reporting_Name": transparency_name,
+                "HCO_Type": org_type,
+                "Status": org_status,
+                "Alternate_Name": [],
+                "X_hco_address": addresses,
+                "Phone": phones,
+                "TaxDetail": [],
+                "AlternateIdentifier": alternate_identifiers,
+                "ElectronicAddress": [],
+                "X_hco_hierarchy": [],
+                "_contentMeta": {
+                    "trust": {
+                        "fieldData": field_data
+                    }
+                },
+            }
+
         return {
-            "X_transparency_reporting_name": (
-                transparency_name
-            ),
+            "X_transparency_reporting_name": transparency_name,
             "firstName": first_name,
             "middleName": middle_name,
             "lastName": last_name,
@@ -1821,7 +1839,8 @@ def lambda_handler(
 
             mdm_hub_payload = (
                 transform_iqvia_to_mdm_hub_post(
-                    iqvia_response
+                    iqvia_response,
+                    entity_type=payload.get("mdmEntityType", "HCP"),
                 )
             )
 

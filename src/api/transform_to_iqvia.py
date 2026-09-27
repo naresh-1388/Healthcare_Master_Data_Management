@@ -14,11 +14,28 @@ MIDDLE_NAME = "hcp.middleName"
 LAST_NAME = "hcp.lastName"
 ADDRESS_COUNTRY_CODE = "address.countryCode"
 
+# HCO field constants
+HCO_NAME = "hco.organizationName"
+HCO_TYPE = "hco.organizationType"
+
 
 IQVIA_FIELD_MAPPING = (
     (FIRST_NAME, "individual.firstName", "EXACT", 1),
     (MIDDLE_NAME, "individual.middleName", "Fuzzy", 1),
     (LAST_NAME, "individual.lastName", "Fuzzy", 1),
+    ("address.primary", "address.shortlabel", "Fuzzy", 1),
+    (ADDRESS_COUNTRY_CODE, "address.country", "EXACT", 1),
+    ("address.city", "address.villagelabel", "Fuzzy", 1),
+    ("address.longPostalCode", "address.longPostalCode", "EXACT", 1),
+    ("address.type", "address.type", "Fuzzy", 1),
+)
+
+# HCO IQVIA field mapping -- maps incoming SBC HCO payload fields to
+# IQVIA organization search fields. Uses organization.name/type instead
+# of individual.firstName/lastName used by HCP.
+HCO_IQVIA_FIELD_MAPPING = (
+    (HCO_NAME, "organization.name", "Fuzzy", 1),
+    (HCO_TYPE, "organization.type", "EXACT", 1),
     ("address.primary", "address.shortlabel", "Fuzzy", 1),
     (ADDRESS_COUNTRY_CODE, "address.country", "EXACT", 1),
     ("address.city", "address.villagelabel", "Fuzzy", 1),
@@ -83,10 +100,23 @@ def _get_nested_value(incoming: Dict[str, Any], path: str) -> Any:
 
 def transform_to_iqvia(
     incoming: Dict[str, Any] | None,
+    entity_type: str = "HCP",
 ) -> Dict[str, Any]:
-    """Build the IQVIA request payload used by the SBC flow."""
+    """Build the IQVIA request payload used by the SBC flow.
+
+    Args:
+        incoming: The SBC search payload from the client.
+        entity_type: "HCP" or "HCO" -- controls which IQVIA field
+            mapping is used. HCP maps individual.firstName/lastName;
+            HCO maps organization.name/type.
+    """
 
     incoming = incoming or {}
+
+    if entity_type.upper() == "HCO":
+        field_mapping = HCO_IQVIA_FIELD_MAPPING
+    else:
+        field_mapping = IQVIA_FIELD_MAPPING
 
     country = str(
         _get_nested_value(incoming, ADDRESS_COUNTRY_CODE) or ""
@@ -111,7 +141,7 @@ def transform_to_iqvia(
         "fields": [],
     }
 
-    for source, target, method, precision in IQVIA_FIELD_MAPPING:
+    for source, target, method, precision in field_mapping:
         values = _values(
             _get_nested_value(incoming, source)
         )
@@ -135,6 +165,7 @@ __all__ = [
     "ADDRESS_COUNTRY_CODE",
     "COUNTRY_TO_CODBASE",
     "IQVIA_FIELD_MAPPING",
+    "HCO_IQVIA_FIELD_MAPPING",
     "IQVIATransformationError",
     "transform_to_iqvia",
 ]

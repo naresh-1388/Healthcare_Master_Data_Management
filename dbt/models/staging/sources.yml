@@ -7,7 +7,7 @@ sources:
       by src/snowflake_sync/push_to_snowflake.py (Stage 7, notebook 10_Snowflake_Sync).
       Column names match Databricks Delta tables exactly. The sync runs after
       DQ rules have been applied (Stage 4, notebook 06_DataQuality_LandToStage).
-    database: HMDM_DEV
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'HMDM_DEV') }}"
     schema: STAGING
     tables:
       - name: HCO_ADDRESS
@@ -45,7 +45,7 @@ sources:
       full explanation. Connect this source to however your environment
       exposes the Informatica hub tables (a Snowflake external table, a
       federated query, or a periodic export job).
-    database: HMDM_DEV
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'HMDM_DEV') }}"
     schema: MDM
     tables:
       - name: hcp_specialty

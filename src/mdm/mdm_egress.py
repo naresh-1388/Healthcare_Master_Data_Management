@@ -81,7 +81,7 @@ def _is_bootstrap_mode() -> bool:
     Set HMDM_BOOTSTRAP_MODE=false to enable the safety check after initial setup.
     """
     import os
-    return os.environ.get("HMDM_BOOTSTRAP_MODE", "true").lower() != "false"
+    return os.environ.get("HMDM_BOOTSTRAP_MODE", "false").lower() == "true"
 
 
 def _qualify_table(table_name: str, default_schema: str) -> str:

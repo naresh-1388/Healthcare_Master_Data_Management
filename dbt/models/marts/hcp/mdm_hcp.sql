@@ -7,8 +7,104 @@
 -- base object.
 -- FIX #3: Source_FK included in output for schema.yml not_null tests.
 
+-- FIX #10: Pre-deduplicate each child table to one row per SOURCE_FK
+-- using ROW_NUMBER before joining. This prevents row multiplication
+-- (cartesian product) when child tables have multiple rows per entity.
+-- Each child keeps the most recently loaded record (LOAD_DATE desc).
+
 with base as (
     select * from {{ ref('stg_HCP_NAME') }}
+),
+
+hcp_address as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_ADDRESS') }}
+    ) where _rn = 1
+),
+
+hcp_alternate_name as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_ALTERNATE_NAME') }}
+    ) where _rn = 1
+),
+
+hcp_education as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_EDUCATION') }}
+    ) where _rn = 1
+),
+
+hcp_email as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_EMAIL') }}
+    ) where _rn = 1
+),
+
+hcp_hco_affiliation as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_HCO_AFFILIATION') }}
+    ) where _rn = 1
+),
+
+hcp_identification as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_IDENTIFICATION') }}
+    ) where _rn = 1
+),
+
+hcp_language as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_LANGUAGE') }}
+    ) where _rn = 1
+),
+
+hcp_license as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_LICENSE') }}
+    ) where _rn = 1
+),
+
+hcp_origin_university as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_ORIGIN_UNIVERSITY') }}
+    ) where _rn = 1
+),
+
+hcp_phone as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_PHONE') }}
+    ) where _rn = 1
+),
+
+hcp_specialty as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_SPECIALTY') }}
+    ) where _rn = 1
+),
+
+hcp_tax as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_TAX') }}
+    ) where _rn = 1
+),
+
+hcp_tendencies as (
+    select * from (
+        select *, row_number() over (partition by SOURCE_FK order by LOAD_DATE desc nulls last) as _rn
+        from {{ ref('stg_HCP_TENDENCIES') }}
+    ) where _rn = 1
 )
 
 select
@@ -40,29 +136,29 @@ select
     hcp_tendencies."Code" as "X_informatica_tendency_code",
     hcp_tendencies."Rank" as "X_informatica_tendency_rank"
 from base
-left join {{ ref('stg_HCP_ADDRESS') }} as hcp_address
+left join hcp_address
     on base.SOURCE_FK = hcp_address.SOURCE_FK
-left join {{ ref('stg_HCP_ALTERNATE_NAME') }} as hcp_alternate_name
+left join hcp_alternate_name
     on base.SOURCE_FK = hcp_alternate_name.SOURCE_FK
-left join {{ ref('stg_HCP_EDUCATION') }} as hcp_education
+left join hcp_education
     on base.SOURCE_FK = hcp_education.SOURCE_FK
-left join {{ ref('stg_HCP_EMAIL') }} as hcp_email
+left join hcp_email
     on base.SOURCE_FK = hcp_email.SOURCE_FK
-left join {{ ref('stg_HCP_HCO_AFFILIATION') }} as hcp_hco_affiliation
+left join hcp_hco_affiliation
     on base.SOURCE_FK = hcp_hco_affiliation.SOURCE_FK
-left join {{ ref('stg_HCP_IDENTIFICATION') }} as hcp_identification
+left join hcp_identification
     on base.SOURCE_FK = hcp_identification.SOURCE_FK
-left join {{ ref('stg_HCP_LANGUAGE') }} as hcp_language
+left join hcp_language
     on base.SOURCE_FK = hcp_language.SOURCE_FK
-left join {{ ref('stg_HCP_LICENSE') }} as hcp_license
+left join hcp_license
     on base.SOURCE_FK = hcp_license.SOURCE_FK
-left join {{ ref('stg_HCP_ORIGIN_UNIVERSITY') }} as hcp_origin_university
+left join hcp_origin_university
     on base.SOURCE_FK = hcp_origin_university.SOURCE_FK
-left join {{ ref('stg_HCP_PHONE') }} as hcp_phone
+left join hcp_phone
     on base.SOURCE_FK = hcp_phone.SOURCE_FK
-left join {{ ref('stg_HCP_SPECIALTY') }} as hcp_specialty
+left join hcp_specialty
     on base.SOURCE_FK = hcp_specialty.SOURCE_FK
-left join {{ ref('stg_HCP_TAX') }} as hcp_tax
+left join hcp_tax
     on base.SOURCE_FK = hcp_tax.SOURCE_FK
-left join {{ ref('stg_HCP_TENDENCIES') }} as hcp_tendencies
+left join hcp_tendencies
     on base.SOURCE_FK = hcp_tendencies.SOURCE_FK

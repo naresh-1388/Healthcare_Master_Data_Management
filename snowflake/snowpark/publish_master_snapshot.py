@@ -2,7 +2,7 @@
 Healthcare MDM - Snowpark publish job.
 
 Runs entirely inside Snowflake (via Snowpark) to snapshot the current
-HMDM_DEV.MDM.master_hcp / HMDM_DEV.MDM.master_hco tables into date-stamped,
+master_hcp / master_hco tables into timestamp-stamped,
 immutable snapshot tables for downstream consumers who need a stable
 "as of" view rather than reading the continuously-updated master tables
 directly.
@@ -65,8 +65,8 @@ def build_session() -> Session:
 
 def publish_snapshot(session: Session, entity: str) -> str:
     """
-    Copy HMDM_DEV.MDM.master_<entity> into a new, immutable
-    HMDM_DEV.MASTER.<entity>_SNAPSHOT_<YYYYMMDD> table.
+    Copy the master_<entity> table into a new, immutable
+    <entity>_SNAPSHOT_<YYYYMMDD_HHMMSS> table.
 
     The source table is created by dbt (master_hcp / master_hco) in the
     MDM schema. The snapshot is stored in the MASTER schema.
@@ -81,17 +81,33 @@ def publish_snapshot(session: Session, entity: str) -> str:
     Raises:
         ValueError: if entity is not "HCP" or "HCO".
     """
+    import os
+
+    # Database/schema are read from environment variables so the same script
+    # works in DEV, TST, and PROD without code changes. Defaults to HMDM_DEV
+    # for backward compatibility with existing environments.
+    sf_database = os.environ.get("SNOWFLAKE_DATABASE", "HMDM_DEV")
+    sf_master_schema = os.environ.get("SNOWFLAKE_MASTER_SCHEMA", "MASTER")
+    sf_mdm_schema = os.environ.get("SNOWFLAKE_MDM_SCHEMA", "MDM")
+
     if entity not in ("HCP", "HCO"):
         raise ValueError(f"entity must be 'HCP' or 'HCO', got {entity!r}")
 
-    # dbt marts write to HMDM_DEV.MDM schema (see dbt_project.yml +schema: mdm).
-    # The model names are master_hcp / master_hco (lowercase).
-    source_table = f"HMDM_DEV.MDM.master_{entity.lower()}"
-    snapshot_date = dt.date.today().strftime("%Y%m%d")
-    snapshot_table = f"HMDM_DEV.MASTER.{entity}_SNAPSHOT_{snapshot_date}"
+    # dbt marts write to the MDM schema. The model names are
+    # master_hcp / master_hco (lowercase).
+    source_table = f"{sf_database}.{sf_mdm_schema}.master_{entity.lower()}"
+
+    # Include timestamp in snapshot name so same-day reruns create a new
+    # snapshot instead of overwriting the previous one. This makes snapshots
+    # truly immutable -- each pipeline run gets its own unique snapshot table.
+    snapshot_timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_table = f"{sf_database}.{sf_master_schema}.{entity}_SNAPSHOT_{snapshot_timestamp}"
 
     df = session.table(source_table)
-    df.write.mode("overwrite").save_as_table(snapshot_table)
+
+    # Use errorifexists mode so a name collision raises an error instead of
+    # silently overwriting a previously published snapshot.
+    df.write.mode("errorifexists").save_as_table(snapshot_table)
 
     return snapshot_table
 

@@ -183,7 +183,7 @@ def validate_request_payload(
         - mandatory fields
         - nested fields
         - null/blank values
-        - mdmEntityType must be HCP
+        - mdmEntityType must be 'HCP' or 'HCO'
         - hcp.specialty must be a list when supplied
         - hcp.email basic format validation
     """
@@ -396,12 +396,12 @@ def validate_request_payload(
             }
         )
 
-    elif mdm_entity.upper() != "HCP":
+    elif mdm_entity.upper() not in ("HCP", "HCO"):
         errors.append(
             {
                 "field_path": "mdmEntityType",
                 "error_type": "INVALID",
-                "message": "mdmEntityType must be 'HCP'",
+                "message": "mdmEntityType must be 'HCP' or 'HCO'",
             }
         )
 
@@ -1439,7 +1439,8 @@ def lambda_handler(
     # --------------------------------------------------
 
     MDM_HUB_payload_dict = transform_to_mdm_hub(
-        payload_dict
+        payload_dict,
+        entity_type=payload_dict.get("mdmEntityType", "HCP"),
     )
 
     MDM_HUB_payload = json.dumps(
@@ -1455,7 +1456,8 @@ def lambda_handler(
     # --------------------------------------------------
 
     iqvia_payload_dict = transform_to_iqvia(
-        payload_dict
+        payload_dict,
+        entity_type=payload_dict.get("mdmEntityType", "HCP"),
     )
 
     iqvia_payload = json.dumps(

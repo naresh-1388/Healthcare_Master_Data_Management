@@ -117,13 +117,15 @@ def _is_bootstrap_mode() -> bool:
     """
     Check if bootstrap mode allows new table creation.
 
-    When True (default): saveAsTable auto-creates missing MDM/MASTER tables.
-    When False: raises RuntimeError if target table doesn't exist (safety guard).
+    When True: saveAsTable auto-creates missing MDM/MASTER tables.
+    When False (default): raises RuntimeError if target table doesn't exist (safety guard).
 
-    Set HMDM_BOOTSTRAP_MODE=false to enable the safety check after initial setup.
+    Set HMDM_BOOTSTRAP_MODE=true to enable table creation during initial setup only.
+    After initial setup, leave it unset (defaults to false) so missing tables
+    are treated as deployment errors, not silently auto-created.
     """
     import os
-    return os.environ.get("HMDM_BOOTSTRAP_MODE", "true").lower() != "false"
+    return os.environ.get("HMDM_BOOTSTRAP_MODE", "false").lower() == "true"
 
 
 def _require_columns(
